@@ -1283,5 +1283,5 @@ class DefectThermoBuilder(Builder):
 
         self.logger.info("Updating {} DefectThermo documents".format(len(items)))
 
-        self.defectthermo.update(items, update_lu=True, key='entry_id')
+        self.defectthermo.update([items], update_lu=True, key='entry_id')
 
