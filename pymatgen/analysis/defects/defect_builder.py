@@ -1282,6 +1282,8 @@ class DefectThermoBuilder(Builder):
     def update_targets(self, items):
 
         self.logger.info("Updating {} DefectThermo documents".format(len(items)))
+        self.logger.info("type {}".format( type(items)))
+        self.logger.info("keys {}".format( items.keys()))
 
         self.defectthermo.update(items, update_lu=True, key='entry_id')
 
