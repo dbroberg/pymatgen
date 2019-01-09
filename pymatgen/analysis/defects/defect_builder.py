@@ -1238,7 +1238,7 @@ class DefectThermoBuilder(Builder):
             else:
                 distinct_entries_full.append( [entry_dict.copy()])
                 nxt_ind = max( distinct_entries.keys()) + 1 if len(distinct_entries.keys()) else 0
-                distinct_entries[nxt_ind] = entry.defect.copy()
+                distinct_entries[nxt_ind] = entry.copy()
 
         #now sort through entries and pick one that has been updated last (but track all previous entry_ids)
         all_entry_ids_considered, entries = [], []
