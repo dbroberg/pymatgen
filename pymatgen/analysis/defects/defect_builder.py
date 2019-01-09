@@ -1221,6 +1221,7 @@ class DefectThermoBuilder(Builder):
         distinct_entries_full = [] #for storing full defect_dict
         distinct_entries = {} #for storing defect object
         bulk_chemsys, run_metadata, bulk_prim_struct, entrylist, entry_id = items
+        self.logger.debug("Processing bulk_chemsys {}".format(bulk_chemsys))
 
         needed_entry_keys = ['@module', '@class', 'defect', 'uncorrected_energy', 'corrections',
                              'parameters', 'entry_id', 'task_id']
@@ -1260,12 +1261,12 @@ class DefectThermoBuilder(Builder):
                 self.logger.error("Logging vbm = {} (retrieved from {}, task-id {}) but {} "
                                   "(task-id {}) has vbm = {}. Be careful with this defectphasediagram "
                                   "if these are very different".format( vbm, entries[0].name, entries[0].task_id,
-                                                                        ent.parameters['vbm'], ent.name, ent.task_id))
+                                                                        ent.name, ent.task_id, ent.parameters['vbm']))
             if band_gap != ent.parameters['gap']:
                 self.logger.error("Logging gap = {} (retrieved from {}, task-id {}) but {} "
                                   "(task-id {}) has gap = {}. Be careful with this defectphasediagram "
                                   "if these are very different".format( band_gap, entries[0].name, entries[0].task_id,
-                                                                        ent.parameters['gap'], ent.name, ent.task_id))
+                                                                        ent.name, ent.task_id, ent.parameters['gap']))
 
         defect_phase_diagram = DefectPhaseDiagram( entries, vbm, band_gap, filter_compatible=False,
                                                    metadata={'all_entry_ids_considered': all_entry_ids_considered})

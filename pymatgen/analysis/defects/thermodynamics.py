@@ -144,7 +144,7 @@ class DefectPhaseDiagram(MSONable):
         for defects, index_list in similar_defects( self.entries):
             defects = list(defects)
 
-            # prepping coefficient matrix forx half-space intersection
+            # prepping coefficient matrix for half-space intersection
             # [-Q, 1, -1*(E_form+Q*VBM)] -> -Q*E_fermi+E+-1*(E_form+Q*VBM) <= 0  where E_fermi and E are the variables in the hyperplanes
             hyperplanes = np.array(
                 [[-1.0 * entry.charge, 1, -1.0 * (entry.energy + entry.charge * self.vbm)] for entry in defects])
@@ -166,10 +166,10 @@ class DefectPhaseDiagram(MSONable):
             # sort based on transition level
             ints_and_facets = list(sorted(ints_and_facets, key=lambda int_and_facet: int_and_facet[0][0]))
 
-            # log a defect name for tracking (storing index list with name for now, since this is best way to deal with this for now)
-            # TODO: figure out a better way to track labels?
+            # log a defect name for tracking (storing index list with name to deal
+            # with in-equivalent defects with same name)
             str_index_list = [str(ind) for ind in sorted(index_list)]
-            track_name = defects[0].name + "-" + str("-".join(str_index_list))
+            track_name = defects[0].name + "@" + str("-".join(str_index_list))
 
             if len(ints_and_facets):
                 # Unpack into lists
@@ -191,12 +191,15 @@ class DefectPhaseDiagram(MSONable):
                     name_set = [one_def.name+'_chg'+str(one_def.charge) for one_def in defects]
                     vb_list = [one_def.formation_energy( fermi_level=limits[0][0]) for one_def in defects]
                     cb_list = [one_def.formation_energy( fermi_level=limits[0][1]) for one_def in defects]
+
                     vbm_def_index = vb_list.index( min(vb_list))
                     name_stable_below_vbm = name_set[vbm_def_index]
-                    name_stable_above_cbm = name_set[cb_list.index( min(cb_list))]
+                    cbm_def_index = cb_list.index( min(cb_list))
+                    name_stable_above_cbm = name_set[cbm_def_index]
+
                     if name_stable_below_vbm != name_stable_above_cbm:
-                        raise ValueError("HalfSpace identified only stable charge out of list: {}\nBut {} is "
-                                         "stable below vbm and {} is "
+                        raise ValueError("HalfSpace identified only one stable charge out of list: {}\n"
+                                         "But {} is stable below vbm and {} is "
                                          "stable above cbm.".format(name_set, name_stable_below_vbm,
                                                                     name_stable_above_cbm))
                     else:
