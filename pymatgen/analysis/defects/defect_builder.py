@@ -1116,7 +1116,7 @@ class DefectThermoBuilder(Builder):
         if not self.update_all:
             # if not update_all then grab entry_ids of defects that have been analyzed already...
             prev_dpd = list(self.defectthermo.query(properties=['metadata.all_entry_ids_considered']))
-            if "entry_id" in self.query.keys():
+            if "entry_id" not in self.query.keys():
                 self.query["entry_id"] = {"$nin": []}
             elif "$nin" not in self.query["entry_id"].keys():
                 self.query["entry_id"]["$nin"] = []
