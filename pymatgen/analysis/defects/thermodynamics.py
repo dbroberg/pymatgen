@@ -137,7 +137,6 @@ class DefectPhaseDiagram(MSONable):
         min_y_lim = min(all_eform) - 30
         max_y_lim = max(all_eform) + 30
         limits = [[-1, self.band_gap + 1], [min_y_lim, max_y_lim]]
-        print("thermo limits determined to be {}".format(limits))
 
         stable_entries = {}
         finished_charges = {}
