@@ -200,8 +200,10 @@ class DefectPhaseDiagram(MSONable):
                     if name_stable_below_vbm != name_stable_above_cbm:
                         raise ValueError("HalfSpace identified only one stable charge out of list: {}\n"
                                          "But {} is stable below vbm and {} is "
-                                         "stable above cbm.".format(name_set, name_stable_below_vbm,
-                                                                    name_stable_above_cbm))
+                                         "stable above cbm.\nList of VBM formation energies: {}\n"
+                                         "List of CBM formation energies: {}"
+                                         "".format(name_set, name_stable_below_vbm, name_stable_above_cbm,
+                                                   vb_list, cb_list))
                     else:
                         print("{} is only stable defect out of {}".format( name_stable_below_vbm, name_set))
                         transition_level_map[track_name] = {}
