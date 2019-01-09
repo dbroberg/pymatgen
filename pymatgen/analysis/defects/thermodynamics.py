@@ -132,9 +132,11 @@ class DefectPhaseDiagram(MSONable):
 
         # Limits for search
         # E_fermi = { -1 eV to band gap+1}
-        # the 1 eV padding provides
-        # E_formation. = { -21 eV to 20 eV}
-        limits = [[-1, self.band_gap + 1], [-21, 20]]
+        # E_formation. = { (min(Eform) - 30) to (max(Eform) + 30)}
+        all_eform = [one_def.formation_energy(fermi_level=self.band_gap/2.) for one_def in self.entries]
+        min_y_lim = min(all_eform) - 30
+        max_y_lim = min(all_eform) + 30
+        limits = [[-1, self.band_gap + 1], [min_y_lim, max_y_lim]]
 
         stable_entries = {}
         finished_charges = {}
@@ -153,7 +155,7 @@ class DefectPhaseDiagram(MSONable):
                                   [0, 1, -1 * limits[1][1]]]
             hs_hyperplanes = np.vstack([hyperplanes, border_hyperplanes])
 
-            interior_point = [self.band_gap / 2, -20]
+            interior_point = [self.band_gap / 2, min(all_eform) - 1.]
 
             hs_ints = HalfspaceIntersection(hs_hyperplanes, np.array(interior_point))
 

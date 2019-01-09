@@ -1123,6 +1123,7 @@ class DefectThermoBuilder(Builder):
             elif "$nin" not in self.query["entry_id"].keys():
                 self.query["entry_id"]["$nin"] = []
             for dpd in prev_dpd:
+                self.logger.debug("Not considering: {}".format( dpd['metadata']['all_entry_ids_considered']))
                 self.query["entry_id"]["$nin"].extend( dpd['metadata']['all_entry_ids_considered'])
 
             self.logger.debug('query after removing previously considered entry_ids is: {}'.format( q))
