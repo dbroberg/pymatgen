@@ -132,7 +132,7 @@ class DefectPhaseDiagram(MSONable):
 
         # Limits for search
         # E_fermi = { -1 eV to band gap+1}
-        # E_formation. = { (min(Eform) - 30) to (max(Eform) + 30)}
+        # E_formation = { (min(Eform) - 30) to (max(Eform) + 30)}
         all_eform = [one_def.formation_energy(fermi_level=self.band_gap/2.) for one_def in self.entries]
         min_y_lim = min(all_eform) - 30
         max_y_lim = max(all_eform) + 30

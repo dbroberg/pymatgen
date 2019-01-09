@@ -438,18 +438,15 @@ class DefectBuilder(Builder):
             defect_tasks = [dtask for dind, dtask in enumerate(defect_tasks) if dind < self.max_items_size]
         task_ids = [dtask['task_id'] for dtask in defect_tasks]
         self.logger.info("Found {} new defect tasks to consider:\n{}".format( len(defect_tasks), task_ids))
-        # log_defect_bulk_types = [frozenset(Structure.from_dict(dt['transformations']['history'][0]['defect']['structure']).symbol_set)
-        #                          for dt in defect_tasks]
-        # log_defect_bulk_types = list(set( log_defect_bulk_types))
         log_defect_bulk_types = ["-".join(sorted((Structure.from_dict(dt['transformations']['history'][0]['defect']['structure']).symbol_set)))
                                  for dt in defect_tasks]
         log_defect_bulk_types = list(set( log_defect_bulk_types))
 
-        #get a few other tasks which are needed for defect entries (regardless of when they were last updated):
-        #   bulk_supercell, dielectric calc, BS calc, HSE-BS calc
+        # get a few other tasks which are needed for defect entries (regardless of when they were last updated):
+        # bulk_supercell, dielectric calc, BS calc, HSE-BS calc
         bulksc = {"state": "successful", 'transformations.history.0.@module':
             {'$in': ['pymatgen.transformations.standard_transformations']},
-                  "chemsys": {"$in": log_defect_bulk_types}} #ALSO -> confirm identical INCAR settings are set?
+                  "chemsys": {"$in": log_defect_bulk_types}}
         dielq = {"state": "successful", "input.incar.LEPSILON": True, "input.incar.LPEAD": True}
         HSE_BSq = {"state": "successful", 'calcs_reversed.0.input.incar.LHFCALC': True,
                    'transformations.history.0.@module':
@@ -461,23 +458,19 @@ class DefectBuilder(Builder):
         all_bulk_tasks = list(self.tasks.query(criteria=bulksc, properties=['task_id', 'chemsys', 'last_updated',
                                                                             'input', 'task_label']))
         self.logger.info('Queried {} bulk calculations'.format( len(all_bulk_tasks)))
-        log_additional_tasks = dict() #organize based on symbols to save a bit of parsing time
+
+        # update queries with chemsys of interest
+        log_additional_tasks = dict()
         for blktask in all_bulk_tasks:
             chemsys = blktask['chemsys']
-            # sym_set = frozenset(blktask['chemsys'].split('-'))
-            # if sym_set not in log_defect_bulk_types:
-            #     continue
 
-            # if sym_set not in log_additional_tasks.keys():
-            #     log_additional_tasks[sym_set] = {'bulksc': [blktask.copy()]}
-            # else:
-            #     log_additional_tasks[sym_set]['bulksc'].append( blktask.copy())
+            #grab bulk supercell
             if chemsys not in log_additional_tasks.keys():
                 log_additional_tasks[chemsys] = {'bulksc': [blktask.copy()]}
             else:
                 log_additional_tasks[chemsys]['bulksc'].append( blktask.copy())
 
-            #grab diel
+            #grab all diel calcs for chemsys
             if 'diel' not in log_additional_tasks[chemsys].keys():
                 q = dielq.copy()
                 # q.update( {'elements': {'$all': list( sym_set)}})
@@ -488,30 +481,33 @@ class DefectBuilder(Builder):
                 # log_additional_tasks[sym_set]['diel'] = diel_tasks[:]
                 log_additional_tasks[chemsys]['diel'] = diel_tasks[:]
 
-            #grab hse bs
+            #grab all hse bs calcs for chemsys
             if 'hsebs' not in log_additional_tasks[chemsys].keys():
                 q = HSE_BSq.copy()
                 # q.update( {'elements': {'$all': list( sym_set)}})
                 q.update( {"chemsys": chemsys})
                 hybrid_tasks = list(self.tasks.query(criteria=q,
-                                                     properties=['task_id', 'input', 'output', 'task_label']))
+                                                     properties=['task_id', 'input',
+                                                                 'output', 'task_label']))
                 log_additional_tasks[chemsys]['hsebs'] = hybrid_tasks[:]
 
-            self.logger.debug("\t{} has {} bulk loaded {} diel and {} hse".format( chemsys, len(log_additional_tasks[chemsys]),
-                                                                                   len(log_additional_tasks[chemsys]['diel']),
-                                                                                   len(log_additional_tasks[chemsys]['hsebs'])))
+            self.logger.debug("\t{} has {} bulk loaded {} diel and {} hse"
+                              "".format( chemsys, len(log_additional_tasks[chemsys]),
+                                         len(log_additional_tasks[chemsys]['diel']),
+                                         len(log_additional_tasks[chemsys]['hsebs'])))
 
         self.logger.info('Populated bulk, diel, and hse bs lists')
-        #now load up all defect tasks with relevant information required for analysis
+
+        #now load up all defect tasks with relevant information required for process_item step
         temp_log_bs_bulk = dict() #to minimize number of band structure queries to MP, log by element sets
         for d_task in defect_tasks:
-            chemsys = "-".join(sorted((Structure.from_dict(d_task['transformations']['history'][0]['defect']['structure']).symbol_set)))
-            # sym_set = frozenset(Structure.from_dict(d_task['transformations']['history'][0]['defect']['structure']).symbol_set)
+            chemsys = "-".join(sorted((Structure.from_dict(
+                d_task['transformations']['history'][0]['defect']['structure']).symbol_set)))
             defect_task = self.load_defect_task( d_task, log_additional_tasks[chemsys])
             if defect_task is None:
                 continue
 
-            #import additional bulk task information and get mp-id as appropriate
+            #import additional bulk task information and get mp-id / MP-BS as appropriate
             bulk_task_id = defect_task['bulk_task']['task_id']
             if bulk_task_id not in temp_log_bs_bulk.keys():
                 full_bulk_task = list(self.tasks.query(criteria={'task_id': bulk_task_id},
@@ -1129,7 +1125,7 @@ class DefectThermoBuilder(Builder):
 
         # q.update(self.defects.lu_filter(self.defectthermo))  #TODO: does this work?? / is it needed?
 
-        #pulling restricted amount of defect info for PD, so not an overwhelming database query
+        # restricted amount of defect info for PD, so not an overwhelming database query
         entry_keys_needed_for_thermo = ['defect', 'parameters.task_level_metadata', 'parameters.last_updated',
                                         'task_id', 'entry_id', '@module', '@class',
                                         'uncorrected_energy', 'corrections', 'parameters.dielectric',
@@ -1172,6 +1168,8 @@ class DefectThermoBuilder(Builder):
                 run_metadata['pot_spec'] = "-".join(sorted(set(pspec))) #had to switch to this approach for proper dict comparison later on
                 run_metadata['pot_labels'] = "-".join(sorted(set(plab)))
 
+            # see if defect_entry matches an grouped entry list item already in progress
+            # does this by matching bulk structure and run metadata
             matched = False
             for grp_ind, grpd_entry in enumerate(grpd_entry_list):
                 if grpd_entry[0] == bulk_chemsys and grpd_entry[1] == run_metadata:
@@ -1184,7 +1182,7 @@ class DefectThermoBuilder(Builder):
                 else:
                     continue
 
-            if not matched: #have not logged yet, see if previous thermo phase diagram created for this system
+            if not matched: #have not logged yet, see if previous thermo phase diagram was created for this system
                 for t_ent in thermo_entries:
                     if t_ent['bulk_chemsys'] == bulk_chemsys and t_ent['run_metadata'] == run_metadata:
                         if sm.fit(base_bulk_struct, Structure.from_dict(t_ent['bulk_prim_struct'])):
@@ -1207,12 +1205,11 @@ class DefectThermoBuilder(Builder):
                     else:
                         continue
 
-            if not matched: #create new thermo phase diagram for this system, and generate an entry_id for it
-                #TODO: this might cause issues if multiple instances of this builder are run at same time
-                # at the same time...(multiple phase diagrams created for same system)
-                entry_id = max(self.defectthermo.distinct('entry_id')) + 1
+            if not matched:
+                # create new thermo phase diagram for this system,
+                # entry_id will be generated later on
                 grpd_entry_list.append( [bulk_chemsys, run_metadata.copy(), base_bulk_struct.copy(),
-                                         [entry_dict.copy()], entry_id])
+                                         [entry_dict.copy()], 'None'])
 
 
         for new_defects_for_thermo_entry in grpd_entry_list:
@@ -1280,6 +1277,11 @@ class DefectThermoBuilder(Builder):
         return defect_phase_diagram_as_dict
 
     def update_targets(self, items):
+        next_entry_id = max(self.defectthermo.distinct('entry_id')) + 1
+        for item in items:
+            if item['entry_id'] == 'None':
+                item['entry_id'] = next_entry_id
+                next_entry_id += 1
 
         self.logger.info("Updating {} DefectThermo documents".format(len(items)))
 
