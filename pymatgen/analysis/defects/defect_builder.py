@@ -456,7 +456,7 @@ class DefectBuilder(Builder):
         # TODO: add capability for getting GGA bandstructure from tasks? (Currently uses bulk supercell cbm/vbm when no MPID exists...)
 
         all_bulk_tasks = list(self.tasks.query(criteria=bulksc, properties=['task_id', 'chemsys', 'last_updated',
-                                                                            'input', 'task_label']))
+                                                                            'input', 'task_label', 'calcs_reversed']))
         self.logger.info('Queried {} bulk calculations'.format( len(all_bulk_tasks)))
 
         # update queries with chemsys of interest
@@ -839,7 +839,7 @@ class DefectBuilder(Builder):
         dstruct_withoutdefect = Structure.from_dict(out_defect_task['transformations']['history'][0]['defect']['structure'])
         scaling_matrix = out_defect_task['transformations']['history'][0]['scaling_matrix']
         dstruct_withoutdefect.make_supercell( scaling_matrix)
-        dincar = out_defect_task["input"]["incar"] #identify essential INCAR properties which differentiate different calcs
+        dincar = out_defect_task["calcs_reversed"][0]["incar"] #identify essential INCAR properties which differentiate different calcs
         dincar_reduced = {k: dincar.get(k, None) if dincar.get(k) not in  ['None', 'False', False] else None
                           for k in ["LHFCALC", "HFSCREEN", "IVDW", "LUSE_VDW", "LDAU", "METAGGA"]
                           }
@@ -853,7 +853,7 @@ class DefectBuilder(Builder):
             self.logger.debug("\tTest b_task ({}) keys: {}".format( b_task['task_id'], b_task.keys()))
             if bulk_sm.fit( bstruct, dstruct_withoutdefect):
                 #also match essential INCAR and POTCAR settings
-                bincar = b_task["input"]["incar"]
+                bincar = b_task["calcs_reversed"][0]["incar"]
                 bincar_reduced = {k: bincar.get(k, None) if bincar.get(k) not in ['None', 'False', False] else None
                                   for k in dincar_reduced.keys()
                                   }
