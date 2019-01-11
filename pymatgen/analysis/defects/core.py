@@ -9,7 +9,7 @@ import logging
 import numpy as np
 
 from abc import ABCMeta, abstractmethod
-from monty.json import MSONable, MontyDecoder
+from monty.json import MSONable, MontyDecoder, jsanitize
 from monty.functools import lru_cache
 
 from pymatgen.core.structure import Structure, PeriodicSite
@@ -516,7 +516,7 @@ class DefectEntry(MSONable):
              "defect": self.defect.as_dict(),
              "uncorrected_energy": self.uncorrected_energy,
              "corrections": self.corrections,
-             "parameters": self.parameters,
+             "parameters": jsanitize(self.parameters, strict=True),
              "entry_id": self.entry_id}
         return d
 
