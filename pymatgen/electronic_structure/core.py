@@ -78,6 +78,9 @@ class Orbital(Enum):
     f1 = 13
     f2 = 14
     f3 = 15
+    p = 16
+    d = 17
+    f = 18
 
     def __int__(self):
         return self.value
