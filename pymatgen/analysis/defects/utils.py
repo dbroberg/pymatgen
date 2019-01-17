@@ -2,7 +2,6 @@
 # Copyright (c) Pymatgen Development Team.
 # Distributed under the terms of the MIT License.
 
-from __future__ import division, unicode_literals
 
 import math
 
@@ -38,7 +37,6 @@ try:
 except ImportError:
     peak_local_max_found = False
 
-from six.moves import map
 
 __author__ = "Danny Broberg, Shyam Dwaraknath, Bharat Medasani, Nils Zimmermann, Geoffroy Hautier"
 __copyright__ = "Copyright 2014, The Materials Project"
@@ -53,6 +51,7 @@ hart_to_ev = 27.2114
 ang_to_bohr = 1.8897
 invang_to_ev = 3.80986
 kb = 8.6173324e-5  # eV / K
+kumagai_to_V = 1.809512739e2  # = Electron charge * 1e10 / VacuumPermittivity Constant
 
 #unit conversion for ewald sum equation conversion to V
 kumagai_to_V = 1.809512739e2  # = Electron charge * 1e10 / VacuumPermittivity Constant
@@ -204,7 +203,7 @@ def closestsites(struct_blk, struct_def, pos):
     return blk_close_sites[0], def_close_sites[0]
 
 
-class StructureMotifInterstitial(object):
+class StructureMotifInterstitial:
     """
     Generate interstitial sites at positions
     where the interstitialcy is coordinated by nearest neighbors
@@ -553,7 +552,7 @@ class StructureMotifInterstitial(object):
         return scs
 
 
-class TopographyAnalyzer(object):
+class TopographyAnalyzer:
     """
     This is a generalized module to perform topological analyses of a crystal
     structure using Voronoi tessellations. It can be used for finding potential
@@ -871,7 +870,7 @@ class TopographyAnalyzer(object):
         vis.show()
 
 
-class VoronoiPolyhedron(object):
+class VoronoiPolyhedron:
     """
     Convenience container for a voronoi point in PBC and its associated polyhedron.
     """
@@ -913,7 +912,7 @@ class VoronoiPolyhedron(object):
         return "Voronoi polyhedron %s" % self.name
 
 
-class ChargeDensityAnalyzer(object):
+class ChargeDensityAnalyzer:
     """
     Analyzer to find potential interstitial sites based on charge density. The
     `total` charge density is used.
@@ -1344,7 +1343,6 @@ def generate_R_and_G_vecs(gamma, prec_set, lattice, epsilon):
     invepsilon = np.linalg.inv(epsilon)
     rd_epsilon = np.sqrt(np.linalg.det(epsilon))
 
-
     #generate reciprocal vector set (for each prec_set)
     recip_set = [[] for prec in prec_set]
     recip_summation_values = [0. for prec in prec_set]
@@ -1370,7 +1368,6 @@ def generate_R_and_G_vecs(gamma, prec_set, lattice, epsilon):
 
     recip_summation_values /= volume
 
-
     #generate real vector set (for each prec_set)
     real_set = [[] for prec in prec_set]
     real_summation_values = [0. for prec in prec_set]
@@ -1393,7 +1390,6 @@ def generate_R_and_G_vecs(gamma, prec_set, lattice, epsilon):
                             real_summation_values[real_cut_ind] += nmr / sqrt_loc_res
 
     real_summation_values /= (4 * np.pi * rd_epsilon)
-
 
     return recip_set, recip_summation_values, real_set, real_summation_values
 

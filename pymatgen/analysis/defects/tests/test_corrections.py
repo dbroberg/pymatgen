@@ -2,7 +2,6 @@
 # Copyright (c) Pymatgen Development Team.
 # Distributed under the terms of the MIT License.
 
-from __future__ import unicode_literals
 
 import os
 import unittest
@@ -246,7 +245,7 @@ class DefectsCorrectionsTest(PymatgenTest):
         vac = Vacancy(struc, struc.sites[0], charge=-3)
 
         besc = BandEdgeShiftingCorrection()
-        params = {'hybrid_cbm': 1., 'hybrid_vbm': -1., 'vbm': -0.5, 'cbm': 0.6, 'num_hole_vbm': 0., 'num_elec_cbm': 0.}
+        params = {'hybrid_cbm': 1., 'hybrid_vbm': -1., 'vbm': -0.5, 'cbm': 0.6}
         de = DefectEntry(vac, 0., corrections={}, parameters=params, entry_id=None)
 
         corr = besc.get_correction(de)

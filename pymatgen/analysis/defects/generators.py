@@ -2,9 +2,6 @@
 # Copyright (c) Pymatgen Development Team.
 # Distributed under the terms of the MIT License.
 
-from __future__ import division, unicode_literals
-
-import six
 import logging
 from abc import ABCMeta, abstractmethod
 
@@ -16,6 +13,7 @@ from pymatgen.analysis.defects.core import Vacancy, Interstitial, Substitution
 from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
 from pymatgen.analysis.defects.utils import StructureMotifInterstitial, TopographyAnalyzer
 from pymatgen.analysis.structure_matcher import PointDefectComparator
+
 
 __author__ = "Danny Broberg, Shyam Dwaraknath"
 __copyright__ = "Copyright 2018, The Materials Project"
@@ -31,7 +29,7 @@ This module defines classes to generate point defect structures
 logger = logging.getLogger(__name__)
 
 
-class DefectGenerator(six.with_metaclass(ABCMeta, MSONable)):
+class DefectGenerator(MSONable, metaclass=ABCMeta):
     """
     Abstract class for point defects
     Implements generator pattern
@@ -162,10 +160,10 @@ class InterstitialGenerator(DefectGenerator):
         interstitial_finder = StructureMotifInterstitial(self.structure, self.element)
 
         self.unique_defect_seq = []
-
-        #eliminate sublattice equivalent defects which may
+        # eliminate sublattice equivalent defects which may
         # have slipped through interstitial finder
         pdc = PointDefectComparator()
+
         for poss_site in interstitial_finder.enumerate_defectsites():
             now_defect = Interstitial( self.structure, poss_site)
             append_defect = True

@@ -2,7 +2,6 @@
 # Copyright (c) Pymatgen Development Team.
 # Distributed under the terms of the MIT License.
 
-from __future__ import unicode_literals
 
 import unittest
 
@@ -91,9 +90,11 @@ class VoronoiInterstitialGeneratorTest(PymatgenTest):
         self.assertEqual(str(ints[0].site.specie), "Li")
         self.assertEqual(str(ints[1].site.specie), "Li")
         self.assertEqual(str(ints[2].site.specie), "Li")
+        # self.assertEqual(str(ints[3].site.specie), "Li")
 
         self.assertArrayAlmostEqual(ints[0].site.coords, (1.5177146, 2.6784354, 3.9481299))
         self.assertArrayAlmostEqual(ints[1].site.coords, (1.7357692, 3.8392513, 3.8392513))
+        # self.assertArrayAlmostEqual(ints[2].site.coords, (1.5177146, 3.7168193, 3.7168193))
         self.assertArrayAlmostEqual(ints[2].site.coords, (2.2765713, 2.2575138, 4.5150233))
 
 class SimpleChargeGeneratorTest(PymatgenTest):
