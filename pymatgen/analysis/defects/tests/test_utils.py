@@ -2,7 +2,6 @@
 # Copyright (c) Pymatgen Development Team.
 # Distributed under the terms of the MIT License.
 
-from __future__ import unicode_literals
 
 import unittest
 import os
@@ -14,6 +13,7 @@ from pymatgen.analysis.defects.utils import QModel, eV_to_k, \
     closestsites, StructureMotifInterstitial, TopographyAnalyzer, \
     ChargeDensityAnalyzer, converge, calculate_vol, \
     tune_for_gamma, generate_R_and_G_vecs
+
 from pymatgen.util.testing import PymatgenTest
 
 from pymatgen.core import PeriodicSite

@@ -2,9 +2,6 @@
 # Copyright (c) Pymatgen Development Team.
 # Distributed under the terms of the MIT License.
 
-from __future__ import division, unicode_literals
-
-import six
 import logging
 import numpy as np
 
@@ -28,7 +25,7 @@ __date__ = "Mar 15, 2018"
 logger = logging.getLogger(__name__)
 
 
-class Defect(six.with_metaclass(ABCMeta, MSONable)):
+class Defect(MSONable, metaclass=ABCMeta):
     """
     Abstract class for a single point defect
     """
@@ -380,7 +377,7 @@ class Interstitial(Defect):
             # generate multiplicity based on space group symmetry operations performed on defect coordinates
             try:
                 d_structure = create_saturated_interstitial_structure(self)
-            except:
+            except ValueError:
                 logger.debug('WARNING! Multiplicity was not able to be calculated adequately '
                              'for interstitials...setting this to 1 and skipping for now...')
                 return 1
@@ -451,8 +448,8 @@ def create_saturated_interstitial_structure( interstitial_def, dist_tol=0.1):
             saturated_defect_struct.append(
                         poss_new_site.specie, poss_new_site.coords,
                         coords_are_cartesian=True, validate_proximity=True)
-        except:
-            continue
+        except ValueError:
+            pass
 
     # do final space group analysis to make sure symmetry not lowered by saturating defect structure
     saturated_sga = SpacegroupAnalyzer( saturated_defect_struct)

@@ -2,15 +2,17 @@
 # Copyright (c) Pymatgen Development Team.
 # Distributed under the terms of the MIT License.
 
+import logging
 import numpy as np
 from monty.json import MSONable
 from scipy.spatial import HalfspaceIntersection
 from scipy.optimize import bisect
-from itertools import groupby, chain
+from itertools import chain
 
 from pymatgen.analysis.structure_matcher import PointDefectComparator
 from pymatgen.electronic_structure.dos import FermiDos
 from pymatgen.analysis.defects.core import DefectEntry
+from pymatgen.analysis.structure_matcher import PointDefectComparator
 
 __author__ = "Danny Broberg, Shyam Dwaraknath"
 __copyright__ = "Copyright 2018, The Materials Project"
@@ -20,11 +22,13 @@ __email__ = "shyamd@lbl.gov"
 __status__ = "Development"
 __date__ = "Mar 15, 2018"
 
+logger = logging.getLogger(__name__)
 
 class DefectPhaseDiagram(MSONable):
     """
-    This is similar to a PhaseDiagram object in pymatgen, but has ability to do quick analysis of defect formation energies
-    when fed DefectEntry objects
+    This is similar to a PhaseDiagram object in pymatgen,
+    but has ability to do quick analysis of defect formation energies
+    when fed DefectEntry objects.
 
     uses many of the capabilities from PyCDT's DefectsAnalyzer class...
 
@@ -48,9 +52,46 @@ class DefectPhaseDiagram(MSONable):
         else:
             self.entries = entries
 
+        self.metadata = metadata
         self.find_stable_charges()
         self.metadata = metadata
 
+
+    def as_dict(self):
+        """
+        Json-serializable dict representation of DefectPhaseDiagram
+        """
+        d = {"@module": self.__class__.__module__,
+             "@class": self.__class__.__name__,
+             "entries": [entry.as_dict() for entry in self.entries],
+             "vbm": self.vbm,
+             "band_gap": self.band_gap,
+             "filter_compatible": self.filter_compatible,
+             "metadata": self.metadata}
+        return d
+
+    @classmethod
+    def from_dict(cls, d):
+        """
+        Reconstitute a DefectPhaseDiagram object from a dict representation created using
+        as_dict().
+
+        Args:
+            d (dict): dict representation of DefectPhaseDiagram.
+
+        Returns:
+            DefectPhaseDiagram object
+        """
+        entries = [DefectEntry.from_dict(entry_dict) for entry_dict in d.get("entries")]
+        vbm = d["vbm"]
+        band_gap = d["band_gap"]
+        filter_compatible = d.get("filter_compatible", True)
+        metadata = d.get("metadata", {})
+        if 'entry_id' in entry_dict.keys() and 'entry_id' not in metadata:
+            metadata['entry_id'] = entry_dict['entry_id']
+
+        return cls(entries, vbm, band_gap, filter_compatible=filter_compatible,
+                   metadata=metadata)
 
     def as_dict(self):
         """
@@ -105,6 +146,7 @@ class DefectPhaseDiagram(MSONable):
         This code was modeled after the Halfspace Intersection code for
         the Pourbaix Diagram
         """
+
         def similar_defects( entryset):
             """
             Used for grouping similar defects of different charges
@@ -114,8 +156,8 @@ class DefectPhaseDiagram(MSONable):
                                          check_lattice_scale=False)
             grp_def_sets = []
             grp_def_indices = []
-            for ent_ind, ent in enumerate(entryset):
-                #TODO: more pythonic/elegant way of grouping entry sets with PointDefectComparator
+            for ent_ind, ent in enumerate( entryset):
+                #TODO: more pythonic way of grouping entry sets with PointDefectComparator
                 matched_ind = None
                 for grp_ind, defgrp in enumerate(grp_def_sets):
                     if pdc.are_equal( ent.defect, defgrp[0].defect):
@@ -168,8 +210,8 @@ class DefectPhaseDiagram(MSONable):
             # sort based on transition level
             ints_and_facets = list(sorted(ints_and_facets, key=lambda int_and_facet: int_and_facet[0][0]))
 
-            # log a defect name for tracking (storing index list with name to deal
-            # with in-equivalent defects with same name)
+            # log a defect name for tracking (using full index list to avoid naming
+            # in-equivalent defects with same name)
             str_index_list = [str(ind) for ind in sorted(index_list)]
             track_name = defects[0].name + "@" + str("-".join(str_index_list))
 
@@ -207,17 +249,16 @@ class DefectPhaseDiagram(MSONable):
                                          "".format(name_set, name_stable_below_vbm, name_stable_above_cbm,
                                                    vb_list, cb_list))
                     else:
-                        print("{} is only stable defect out of {}".format( name_stable_below_vbm, name_set))
+                        logger.info("{} is only stable defect out of {}".format( name_stable_below_vbm, name_set))
                         transition_level_map[track_name] = {}
                         stable_entries[track_name] = list([defects[vbm_def_index]])
-                        finished_charges[track_name] = [defects[vbm_def_index].charge]
+                        finished_charges[track_name] = [one_def.charge for one_def in defects]
                 else:
                     transition_level_map[track_name] = {}
 
                     stable_entries[track_name] = list([defects[0]])
 
                     finished_charges[track_name] = [defects[0].charge]
-
 
         self.transition_level_map = transition_level_map
         self.transition_levels = {
@@ -280,7 +321,7 @@ class DefectPhaseDiagram(MSONable):
 
     def suggest_charges(self, tolerance=0.1):
         """
-        Suggest possible charges for defects to computee based on proximity
+        Suggest possible charges for defects to compute based on proximity
         of known transitions from entires to VBM and CBM
 
         Args:

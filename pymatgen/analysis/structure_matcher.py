@@ -6,12 +6,6 @@
 This module provides classes to perform fitting of structures.
 """
 
-from __future__ import division, unicode_literals
-
-import six
-from six.moves import filter
-from six.moves import zip
-
 import numpy as np
 import itertools
 import abc
@@ -26,8 +20,8 @@ from pymatgen.core.periodic_table import get_el_sp
 from pymatgen.optimization.linear_assignment import LinearAssignment
 from pymatgen.util.coord_cython import pbc_shortest_vectors, is_coord_subset_pbc
 from pymatgen.util.coord import lattice_points_in_supercell
-from pymatgen.analysis.defects.core import create_saturated_interstitial_structure, Interstitial, Defect, Vacancy, Substitution
-from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
+from pymatgen.analysis.defects.core import Interstitial, \
+    Defect, Vacancy, Substitution
 
 __author__ = "William Davidson Richards, Stephen Dacek, Shyue Ping Ong"
 __copyright__ = "Copyright 2011, The Materials Project"
@@ -38,7 +32,7 @@ __status__ = "Production"
 __date__ = "Dec 3, 2012"
 
 
-class AbstractComparator(six.with_metaclass(abc.ABCMeta, MSONable)):
+class AbstractComparator(MSONable, metaclass=abc.ABCMeta):
     """
     Abstract Comparator class. A Comparator defines how sites are compared in
     a structure.
@@ -1146,14 +1140,14 @@ class PointDefectComparator(MSONable):
         Returns:
             True if defects are identical in type and sublattice.
         """
-        possible_defect_types = [Defect, Vacancy, Substitution, Interstitial]
+        possible_defect_types = (Defect, Vacancy, Substitution, Interstitial)
 
-        if type(d1) not in possible_defect_types or \
-            type(d2) not in possible_defect_types:
-            raise ValueError("Cannot use PointDefectComparator to " 
-                             "compare non-defect objects...")
+        if not isinstance(d1, possible_defect_types) or \
+            not isinstance(d2, possible_defect_types):
+            raise ValueError("Cannot use PointDefectComparator to" + \
+                             " compare non-defect objects...")
 
-        if (type(d1) != type(d2)):
+        if not isinstance(d1, d2.__class__):
             return False
         elif d1.site.specie != d2.site.specie:
             return False
@@ -1186,4 +1180,3 @@ class PointDefectComparator(MSONable):
             d2._defect_site = d2_defect_site
 
         return sm.fit( d1.generate_defect_structure(), d2.generate_defect_structure())
-

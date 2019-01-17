@@ -2,8 +2,8 @@
 # Copyright (c) Pymatgen Development Team.
 # Distributed under the terms of the MIT License.
 
-from __future__ import unicode_literals
 
+import os
 import unittest
 import numpy as np
 
@@ -12,6 +12,9 @@ from pymatgen.core.sites import PeriodicSite
 from pymatgen.analysis.defects.core import Vacancy, Interstitial, Substitution, \
     DefectEntry, create_saturated_interstitial_structure
 from pymatgen.util.testing import PymatgenTest
+
+test_dir = os.path.join(os.path.dirname(__file__), "..", "..", "..", "..",
+                        'test_files')
 
 class DefectsCoreTest(PymatgenTest):
     def test_vacancy(self):
@@ -200,7 +203,6 @@ class create_saturated_interstitial_structureTest(PymatgenTest):
         sub_site = PeriodicSite("Sr", sc_struc[Cs_index].coords, sc_struc.lattice,
                                 coords_are_cartesian=True)
 
-
         sub = Substitution(sc_struc, sub_site)
         decorated_sub = create_saturated_interstitial_structure(sub)
         self.assertEqual(len(decorated_sub), len(sc_struc))
@@ -232,7 +234,7 @@ class create_saturated_interstitial_structureTest(PymatgenTest):
 
         # test interstitial in non-symmorphic structure type
         # (voronoi and InFit generator of different types...)
-        ns_struc = PymatgenTest.get_mp_structure('mp-23287')
+        ns_struc = Structure.from_file(os.path.join(test_dir, "CuCl.cif"))
 
         inter_site = PeriodicSite("H", [0.45173594, 0.41157895, 5.6604067], ns_struc.lattice,
                                   coords_are_cartesian=True)  # InFit type

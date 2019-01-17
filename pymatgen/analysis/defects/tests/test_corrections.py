@@ -2,7 +2,6 @@
 # Copyright (c) Pymatgen Development Team.
 # Distributed under the terms of the MIT License.
 
-from __future__ import unicode_literals
 
 import os
 import unittest
@@ -144,7 +143,6 @@ class DefectsCorrectionsTest(PymatgenTest):
         self.assertAlmostEqual( kcorr['kumagai_electrostatic'], 0.88236299)
         self.assertAlmostEqual( kcorr['kumagai_potential_alignment'], 2.09704862)
 
-
         # test ES correction
         high_diel_es_corr = kc_high_diel.perform_es_corr( gamma, prec, lattice, -3.)
         self.assertAlmostEqual( high_diel_es_corr, 0.25176240)
@@ -170,7 +168,6 @@ class DefectsCorrectionsTest(PymatgenTest):
                                                            site_list, sampling_radius, q,
                                                            r_vecs[0], g_vecs[0], gamma)
         self.assertAlmostEqual( low_diel_pot_corr, -58.83598095)
-
 
     def test_bandfilling(self):
         v = Vasprun(os.path.join(test_dir, 'vasprun.xml'))
@@ -221,22 +218,23 @@ class DefectsCorrectionsTest(PymatgenTest):
         self.assertAlmostEqual(bfc.metadata['num_hole_vbm'], 0.8125000649)
         self.assertFalse(bfc.metadata['num_elec_cbm'])
 
-        #modify the eigenvalue list to have free electrons
-        elec_eigenvalues = {}
-        for spinkey, spinset in eigenvalues.items():
-            elec_eigenvalues[spinkey] = []
-            for kptset in spinset:
-                elec_eigenvalues[spinkey].append([])
-                for eig in kptset:
-                    if (eig[0] > cbm) and (eig[0] < cbm + .2):
-                        elec_eigenvalues[spinkey][-1].append([eig[0], 0.5])
-                    else:
-                        elec_eigenvalues[spinkey][-1].append(eig)
+        #test case with only one spin and eigen-occupations are 1.
+        one_spin_eigen = hole_eigenvalues.copy()
+        del one_spin_eigen[list(eigenvalues.keys())[0]]
+        bf_corr = bfc.perform_bandfill_corr(one_spin_eigen, kptweights, potalign, vbm, cbm)
+        self.assertAlmostEqual(bf_corr, -0.14487501159000005)
 
-        elec_bf_corr = bfc.perform_bandfill_corr(elec_eigenvalues, kptweights, potalign, vbm, cbm)
-        self.assertAlmostEqual(elec_bf_corr, -0.0903187572254)
-        self.assertAlmostEqual(bfc.metadata['num_elec_cbm'], 0.8541667349)
-        self.assertFalse(bfc.metadata['num_hole_vbm'])
+        #test case with only one spin and eigen-occupations are 2.
+        one_spin_eigen_twooccu = one_spin_eigen.copy()
+        for kptset in one_spin_eigen_twooccu.values():
+            for bandset in kptset:
+                for occuset in bandset:
+                    if occuset[1] == 1.:
+                        occuset[1] = 2.
+                    elif occuset[1] == .5:
+                        occuset[1] = 1.
+        bf_corr = bfc.perform_bandfill_corr(one_spin_eigen_twooccu, kptweights, potalign, vbm, cbm)
+        self.assertAlmostEqual(bf_corr, -0.14487501159000005)
 
 
     def test_bandedgeshifting(self):
@@ -246,7 +244,7 @@ class DefectsCorrectionsTest(PymatgenTest):
         vac = Vacancy(struc, struc.sites[0], charge=-3)
 
         besc = BandEdgeShiftingCorrection()
-        params = {'hybrid_cbm': 1., 'hybrid_vbm': -1., 'vbm': -0.5, 'cbm': 0.6, 'num_hole_vbm': 0., 'num_elec_cbm': 0.}
+        params = {'hybrid_cbm': 1., 'hybrid_vbm': -1., 'vbm': -0.5, 'cbm': 0.6}
         de = DefectEntry(vac, 0., corrections={}, parameters=params, entry_id=None)
 
         corr = besc.get_correction(de)
