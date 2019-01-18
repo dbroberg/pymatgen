@@ -1277,7 +1277,11 @@ class DefectThermoBuilder(Builder):
         return defect_phase_diagram_as_dict
 
     def update_targets(self, items):
-        next_entry_id = max(self.defectthermo.distinct('entry_id')) + 1
+        list_entry_ids = list(self.defectthermo.distinct('entry_id'))
+        if len(list_entry_ids):
+            next_entry_id = max(list_entry_ids) + 1
+        else:
+            next_entry_id = 1
         for item in items:
             if item['entry_id'] == 'None':
                 item['entry_id'] = next_entry_id
