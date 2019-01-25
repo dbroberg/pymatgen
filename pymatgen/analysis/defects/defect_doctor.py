@@ -14,8 +14,6 @@ from fireworks import Workflow
 
 
 
-
-
 def get_fw_from_defect( defect, supercell_size,
                         defect_input_set=None,
                         job_type='normal', db_file='>>db_file<<', vasp_cmd='>>vasp_cmd<<'):
@@ -73,98 +71,61 @@ class DefectResubber(object):
     Does this based on supercell size scaling, delocalization metrics...
     """
 
-    def __init__(self, tasks, defects, lpad):
-        self.tasks = tasks
-        self.defects = defects
+    def __init__(self, lpad):
         self.lpad = lpad
 
-    def resubmit(self, base_structure, name_wf):
+    def additional_charges(self, defect_phase_diagram, supercell_size, name_wf='chg_defect_wf', submit = False):
+        """
+        Submit additional charges for a given defect_phase_diagram
+
+        :param defect_phase_diagram:
+        :param name_wf:
+        :return:
+        """
+        print("Considering additional charges to run for defect_phase_diagram")
         fws = []
 
-        # get relevant defect tasks from database
-        from pymatgen.core import Structure
-        defect_task_list = []
-        #get defects and bulk transformations
-        poss_defect_tasks = self.tasks.find({'transformations.history.0.@module':
-                                                  {'$in': ['pymatgen.transformations.standard_transformations',
-                                                           'pymatgen.transformations.defect_transformations']}})
-        sm = StructureMatcher(primitive_cell=True, scale=False,
-                              attempt_supercell=False, allow_subset=False)
-        for def_task in poss_defect_tasks:
-            init_struct = Structure.from_dict( def_task['transformations']['history'][0]['input_structure'])
-            if sm.fit( base_structure, init_struct):
-                defect_task_list.append( def_task)
-
-        #get dielectric
-        eltset = [elt.symbol for elt in base_structure.composition.elements]
-        eltset.sort()
-        poss_diel_tasks = self.tasks.find( {'elements': eltset, 'input.incar.LEPSILON': True})
-        for diel_task in poss_diel_tasks:
-            init_struct = Structure.from_dict( diel_task['input']['structure'])
-            if sm.fit( base_structure, init_struct):
-                defect_task_list.append( diel_task)
-
-
-
-        # make tasks into defect entry objects and run them through compatibility
-        dcompat = DefectCompatibility( plnr_avg_var_tol=0.1, plnr_avg_minmax_tol=0.1,
-                             atomic_site_var_tol=0.1, atomic_site_minmax_tol=0.1,
-                             tot_relax_tol=1.0, perc_relax_tol=20.,
-                             defect_tot_relax_tol=0.1, preferred_cc='freysoldt',
-                             free_chg_cutoff=4.,  use_bandfilling=True, use_bandedgeshift=False)
-        tdb = TaskDefectBuilder( defect_task_list, gga_run=True, compatibility=dcompat)
-        defect_entry_list = tdb.process_entries(self, run_compatibility=True)
-
-
-
-        # load to thermodynamics and figure out which additional charge states need to be calculated
-        vbm = defect_entry_list[0].parameters['vbm']
-        band_gap = defect_entry_list[0].parameters['gga_gap']
-        defect_thermo = DefectPhaseDiagram( defect_entry_list, vbm, band_gap, filter_compatible=False)
-        print('--> Defects loaded to DefectPhaseDiagram.\n\nFinished charges:')
-        for k, v in defect_thermo.finished_charges.items():
+        print('Finished charges:')
+        for k, v in defect_phase_diagram.finished_charges.items():
             print('\t{}: {}'.format( k, v))
         print('\nSTABLE charges:')
-        for k, v in defect_thermo.stable_charges.items():
-            print('\t{}: {}\t(t.l.: {} ) '.format( k, v, defect_thermo.transition_levels[k]))
+        for k, v in defect_phase_diagram.stable_charges.items():
+            print('\t{}: {}\t(t.l.: {} ) '.format( k, v, defect_phase_diagram.transition_levels[k]))
 
         print('\nNow consider charges for follow up..')
-        rec_dict = defect_thermo.suggest_charges()
+        rec_dict = defect_phase_diagram.suggest_charges()
         for defname, charge_list in rec_dict.items():
-            defect_template = defect_thermo.stable_entries[defname][0].copy()
+            defect_template = defect_phase_diagram.stable_entries[defname][0].copy()
             for charge in charge_list:
                 defect = defect_template.copy()
                 defect.set_charge( charge)
-
-                for task in defect_task_list:
-                    if defect_template.parameters['dir_name'] in task['dir_name']:
-                        supercell_size = task['transformations']['history'][0]['scaling_matrix'][:]
-                        break
-
-                fw = get_fw_from_defect( defect, supercell_size)
-                fws.append( fw)
+                fws.append( get_fw_from_defect( defect, supercell_size) )
                 print('\trerunning ', defect.name, defect.charge)
 
-
-
+        print("Created a total of {} fireworks".format( len(fws)))
         # load Workflow to lpad
-        # wf = Workflow( fws, name=name_wf)
-        # self.lpad.add_wf( wf)
+        if submit:
+            wf = Workflow( fws, name=name_wf)
+            self.lpad.add_wf( wf)
+            print('Submitted!')
 
+        return
 
+    def larger_supercells(self, defect_phase_diagram):
+        #TODO -> based on compatibility, allow for larger supercells to be run...
         return
 
 
 
 if __name__ == "__main__":
     #get database
-    from atomate.vasp.database import VaspCalcDb
-    db = VaspCalcDb.from_db_file("db.json", admin=True)
-    tasks = db.get_collections('tasks')
-    defects?? #TODO make a defect collection for storing defect entries...
-
-    drs = DefectResubber(tasks, defects, lpad)
-    drs.resubmit( bulk_struct, name_wf)
+    # from atomate.vasp.database import VaspCalcDb
+    # db = VaspCalcDb.from_db_file("db.json", admin=True)
+    # tasks = db.get_collections('tasks')
+    # defects?? #TODO make a defect collection for storing defect entries...
+    #
+    # drs = DefectResubber(tasks, defects, lpad)
+    # drs.resubmit( bulk_struct, name_wf)
 
 
 
