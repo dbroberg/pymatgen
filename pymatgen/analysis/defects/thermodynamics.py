@@ -52,7 +52,6 @@ class DefectPhaseDiagram(MSONable):
         else:
             self.entries = entries
 
-        self.metadata = metadata
         self.find_stable_charges()
         self.metadata = metadata
 
@@ -87,44 +86,8 @@ class DefectPhaseDiagram(MSONable):
         band_gap = d["band_gap"]
         filter_compatible = d.get("filter_compatible", True)
         metadata = d.get("metadata", {})
-        if 'entry_id' in entry_dict.keys() and 'entry_id' not in metadata:
-            metadata['entry_id'] = entry_dict['entry_id']
-
-        return cls(entries, vbm, band_gap, filter_compatible=filter_compatible,
-                   metadata=metadata)
-
-    def as_dict(self):
-        """
-        Json-serializable dict representation of DefectPhaseDiagram
-        """
-        d = {"@module": self.__class__.__module__,
-             "@class": self.__class__.__name__,
-             "entries": [entry.as_dict() for entry in self.entries],
-             "vbm": self.vbm,
-             "band_gap": self.band_gap,
-             "filter_compatible": self.filter_compatible,
-             "metadata": self.metadata}
-        return d
-
-    @classmethod
-    def from_dict(cls, d):
-        """
-        Reconstitute a DefectPhaseDiagram object from a dict representation created using
-        as_dict().
-
-        Args:
-            d (dict): dict representation of DefectPhaseDiagram.
-
-        Returns:
-            DefectPhaseDiagram object
-        """
-        entries = [DefectEntry.from_dict(entry_dict) for entry_dict in d.get("entries")]
-        vbm = d["vbm"]
-        band_gap = d["band_gap"]
-        filter_compatible = d.get("filter_compatible", True)
-        metadata = d.get("metadata", {})
-        if 'entry_id' in entry_dict.keys() and 'entry_id' not in metadata:
-            metadata['entry_id'] = entry_dict['entry_id']
+        if 'entry_id' in d.keys() and 'entry_id' not in metadata:
+            metadata['entry_id'] = d['entry_id']
 
         return cls(entries, vbm, band_gap, filter_compatible=filter_compatible,
                    metadata=metadata)
