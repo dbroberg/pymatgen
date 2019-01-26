@@ -3,10 +3,10 @@ A set of classes and functions that are useful for defect workflow management
 """
 
 from pymatgen.io.vasp.sets import MPRelaxSet
-from pymatgen.analysis.defects.defect_compatibility import DefectCompatibility
-from pymatgen.analysis.defects.defect_builder import TaskDefectBuilder
-from pymatgen.analysis.defects.thermodynamics import DefectPhaseDiagram
-from pymatgen.analysis.structure_matcher import StructureMatcher
+# from pymatgen.analysis.defects.defect_compatibility import DefectCompatibility
+# from pymatgen.analysis.defects.defect_builder import TaskDefectBuilder
+# from pymatgen.analysis.defects.thermodynamics import DefectPhaseDiagram
+# from pymatgen.analysis.structure_matcher import StructureMatcher
 
 from atomate.vasp.fireworks.core import TransmuterFW
 
@@ -95,7 +95,7 @@ class DefectResubber(object):
         print('\nNow consider charges for follow up..')
         rec_dict = defect_phase_diagram.suggest_charges()
         for defname, charge_list in rec_dict.items():
-            defect_template = defect_phase_diagram.stable_entries[defname][0].copy()
+            defect_template = defect_phase_diagram.stable_entries[defname][0].defect.copy()
             for charge in charge_list:
                 defect = defect_template.copy()
                 defect.set_charge( charge)
@@ -111,13 +111,22 @@ class DefectResubber(object):
 
         return
 
-    def larger_supercells(self, defect_phase_diagram):
-        #TODO -> based on compatibility, allow for larger supercells to be run...
-        return
+    # def larger_supercells(self, entries, max_atoms=800):
+    #     """
+    #     Use compatibility class in a phaes diagram without filtering to determine whether
+    #     larger supercells should be run
+    #     :param entries:
+    #     :return:
+    #     """
+    #     vbm, band_gap,
+    #     DefectPhaseDiagram( entries, vbm, band_gap, filter_compatible=False)
+    #     #TODO -> based on compatibility, allow for larger supercells to be run...
+    #     return
 
 
 
 if __name__ == "__main__":
+    pass
     #get database
     # from atomate.vasp.database import VaspCalcDb
     # db = VaspCalcDb.from_db_file("db.json", admin=True)
