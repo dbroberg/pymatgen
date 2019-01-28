@@ -43,7 +43,7 @@ class Defect(MSONable, metaclass=ABCMeta):
                 (assuming use_structure_charge=True in vasp input set)
         """
         self._structure = structure
-        self._charge = charge
+        self._charge = int(charge)
         self._defect_site = defect_site
         if structure.lattice != defect_site.lattice:
             raise ValueError("defect_site lattice must be same as structure lattice.")
@@ -117,7 +117,7 @@ class Defect(MSONable, metaclass=ABCMeta):
         Args:
             charge (float): new charge to set
         """
-        self._charge = new_charge
+        self._charge = int(new_charge)
 
 
 class Vacancy(Defect):
