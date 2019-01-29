@@ -381,7 +381,27 @@ class DefectPhaseDiagram(MSONable):
             # recommendations[def_type] = test_charges
 
 
+
         return
+
+    def get_transition_level(self, defect_name, q1, q2):
+        """
+        Solves for the transition level (relative to VBM = 0.) for two charge states.
+        This provides a transition level even if the charges are not stable in the phase diagram
+        """
+        for q in [q1, q2]:
+            if q not in self.finished_charges[defect_name]:
+                raise ValueError("{} is not finished for {}".format( q, defect_name))
+
+        defect_indices = [int(defect_ind) for defect_ind in defect_name.split('@')[1].split('-')]
+        for index in defect_indices:
+            if self.entries[index].charge == q1:
+                ef1 = self.entries[index].formation_energy()
+            elif self.entries[index].charge == q2:
+                ef2 = self.entries[index].formation_energy()
+
+        return - (ef1 - ef2) / float(q1 - q2)
+
 
     def solve_for_fermi_energy(self, temperature, chemical_potentials, bulk_dos):
         """
