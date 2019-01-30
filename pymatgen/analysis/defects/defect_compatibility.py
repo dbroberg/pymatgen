@@ -57,7 +57,6 @@ class DefectCompatibility(MSONable):
                  free_chg_cutoff=2.,
                  use_bandfilling=True,
                  use_bandedgeshift=True):
-        # TODO: fine tune qualifiers a bit more...
         self.plnr_avg_var_tol = plnr_avg_var_tol
         self.plnr_avg_minmax_tol = plnr_avg_minmax_tol
         self.atomic_site_var_tol = atomic_site_var_tol
@@ -99,8 +98,6 @@ class DefectCompatibility(MSONable):
             if (self.free_chg_cutoff < defect_entry.parameters["num_hole_vbm"]) or (
                 self.free_chg_cutoff < defect_entry.parameters["num_elec_cbm"]):
                 print('Will not use charge correction because too many free charges')
-                # TODO: should the potential alignment correction still be used in this scenario?
-                # TODO: with too much charge delocalized should probably not use?
                 skip_charge_corrections = True
 
         if skip_charge_corrections:
@@ -208,7 +205,6 @@ class DefectCompatibility(MSONable):
 
         if not run_bandfilling:
             print('Insufficient DefectEntry parameters exist for BandFilling Correction.')
-        # elif 'bandfilling_meta' not in defect_entry.parameters.keys():
         else:
             defect_entry = self.perform_bandfilling( defect_entry)
 
@@ -218,7 +214,6 @@ class DefectCompatibility(MSONable):
                                 == len(required_bandedge_shifting_params) else False
         if not run_bandedge_shifting:
             print('Insufficient DefectEntry parameters exist for BandShifting Correction.')
-        # elif 'bandedgeshift_meta' not in defect_entry.parameters.keys():
         else:
             defect_entry = self.perform_band_edge_shifting( defect_entry)
 

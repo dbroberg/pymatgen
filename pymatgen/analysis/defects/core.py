@@ -196,33 +196,25 @@ class Substitution(Defect):
 
     def generate_defect_structure(self, supercell=(1, 1, 1)):
         """
-        Returns Defective Substitution structure, decorated with charge
+        Returns Defective Substitution structure, decorated with charge.
+        If bulk structure had any site properties, all of these properties are
+        removed in the resulting defect structure
+
         Args:
             supercell (int, [3x1], or [[]] (3x3)): supercell integer, vector, or scaling matrix
         """
-        defect_structure = self.bulk_structure.copy()
+        defect_structure = Structure( self.bulk_structure.copy().lattice,
+                                      [site.specie for site in self.bulk_structure],
+                                      [site.frac_coords for site in self.bulk_structure],
+                                      to_unit_cell=True, coords_are_cartesian = False,
+                                      site_properties = None) #remove all site_properties
         defect_structure.make_supercell(supercell)
 
-        # consider modifying velocity property to make sure defect site is decorated
-        # consistently with bulk structure for final defect_structure
-        defect_properties = self.site.properties.copy()
-        if ('velocities' in self.bulk_structure.site_properties) and \
-            'velocities' not in defect_properties:
-            if all( vel == self.bulk_structure.site_properties['velocities'][0]
-                    for vel in self.bulk_structure.site_properties['velocities']):
-                defect_properties['velocities'] = self.bulk_structure.site_properties['velocities'][0]
-            else:
-                raise ValueError("No velocity property specified for defect site and "
-                                 "bulk_structure velocities are not homogeneous. Please specify this "
-                                 "property within the initialized defect_site object.")
-
         #create a trivial defect structure to find where supercell transformation moves the lattice
-        site_properties_for_fake_struct = {prop: [val] for prop,val in defect_properties.items()}
         struct_for_defect_site = Structure( self.bulk_structure.copy().lattice,
                                              [self.site.specie],
                                              [self.site.frac_coords],
-                                             to_unit_cell=True,
-                                             site_properties = site_properties_for_fake_struct)
+                                             to_unit_cell=True, coords_are_cartesian = False)
         struct_for_defect_site.make_supercell(supercell)
         defect_site = struct_for_defect_site[0]
 
@@ -232,7 +224,7 @@ class Substitution(Defect):
 
         subsite = defect_structure.pop(defindex)
         defect_structure.append(self.site.specie.symbol, subsite.coords, coords_are_cartesian=True,
-                                properties = defect_site.properties)
+                                properties = None)
         defect_structure.set_charge(self.charge)
         return defect_structure
 
@@ -307,64 +299,29 @@ class Interstitial(Defect):
     def generate_defect_structure(self, supercell=(1, 1, 1)):
         """
         Returns Defective Interstitial structure, decorated with charge
+        If bulk structure had any site properties, all of these properties are
+        removed in the resulting defect structure
+
         Args:
             supercell (int, [3x1], or [[]] (3x3)): supercell integer, vector, or scaling matrix
         """
-        defect_structure = self.bulk_structure.copy()
+        defect_structure = Structure( self.bulk_structure.copy().lattice,
+                                      [site.specie for site in self.bulk_structure],
+                                      [site.frac_coords for site in self.bulk_structure],
+                                      to_unit_cell=True, coords_are_cartesian = False,
+                                      site_properties = None) #remove all site_properties
         defect_structure.make_supercell(supercell)
 
-        # consider modifying velocity property to make sure defect site is decorated
-        # consistently with bulk structure for final defect_structure
-        defect_properties = self.site.properties.copy()
-        if ('velocities' in self.bulk_structure.site_properties) and \
-            'velocities' not in defect_properties:
-            if all( vel == self.bulk_structure.site_properties['velocities'][0]
-                    for vel in self.bulk_structure.site_properties['velocities']):
-                defect_properties['velocities'] = self.bulk_structure.site_properties['velocities'][0]
-            else:
-                raise ValueError("No velocity property specified for defect site and "
-                                 "bulk_structure velocities are not homogeneous. Please specify this "
-                                 "property within the initialized defect_site object.")
-        elif ('velocities' in self.bulk_structure.site_properties) and \
-              'velocities' in defect_properties:
-            if type(self.bulk_structure.site_properties['velocities'][0]) != type( defect_properties['velocities']):
-                if all(vel == self.bulk_structure.site_properties['velocities'][0]
-                            for vel in self.bulk_structure.site_properties['velocities']):
-                    if self.bulk_structure.site_properties['velocities'][0] is None:
-                        if defect_properties['velocities'] == [ 0., 0., 0.]:
-                            defect_properties['velocities'] = None
-                        else:
-                            raise ValueError("Defect site object has a velocity of {} but bulk structure has [None,...] "
-                                             "for its velocities. Need to reinitialize bulk structure with "
-                                             "velocities desired with this defect site".format( defect_properties['velocities']))
-                    if defect_properties['velocities'] is None:
-                        if self.bulk_structure.site_properties['velocities'][0] == [ 0., 0., 0.]:
-                            defect_properties['velocities'] = [0., 0., 0.]
-                        else:
-                            raise ValueError("Defect site object has a velocity of None but bulk structure has non-zero velocities "
-                                             "for its velocities. Need to reinitialize bulk structure with "
-                                             "velocities desired with this defect site")
-                else:
-                    raise ValueError("Bulk velocities are not homogeneous and the defect velocity is of a different "
-                                     "type. Do not know how to rectify this... please reinitialize defect object.")
-            else:
-                raise ValueError("Velocity types {} and {} are not the same between bulk and defect and "
-                                 "bulk_structure velocities are not homogeneous, so I cannot rectify these velocities. "
-                                 "Please fix this property within the initialized defect_site object.".format(
-                    type(self.bulk_structure.site_properties['velocities'][0]), type( defect_properties['velocities'])))
-
         #create a trivial defect structure to find where supercell transformation moves the defect site
-        site_properties_for_fake_struct = {prop: [val] for prop,val in defect_properties.items()}
         struct_for_defect_site = Structure( self.bulk_structure.copy().lattice,
                                              [self.site.specie],
                                              [self.site.frac_coords],
-                                             to_unit_cell=True,
-                                             site_properties = site_properties_for_fake_struct)
+                                             to_unit_cell=True, coords_are_cartesian = False)
         struct_for_defect_site.make_supercell(supercell)
         defect_site = struct_for_defect_site[0]
 
         defect_structure.append(self.site.specie.symbol, defect_site.coords, coords_are_cartesian=True,
-                                properties = defect_site.properties)
+                                properties = None)
         defect_structure.set_charge(self.charge)
         return defect_structure
 
@@ -514,7 +471,8 @@ class DefectEntry(MSONable):
              "uncorrected_energy": self.uncorrected_energy,
              "corrections": self.corrections,
              "parameters": jsanitize(self.parameters, strict=True),
-             "entry_id": self.entry_id}
+             "entry_id": self.entry_id,
+             "task_id": self.task_id}
         return d
 
     @classmethod
@@ -532,9 +490,10 @@ class DefectEntry(MSONable):
         corrections = d.get("corrections", None)
         parameters = d.get("parameters", None)
         entry_id = d.get("entry_id", None)
+        task_id = d.get("task_id", None)
 
         return cls(defect, uncorrected_energy, corrections=corrections,
-                   parameters=parameters, entry_id=entry_id)
+                   parameters=parameters, entry_id=entry_id, task_id=task_id)
 
     @property
     def site(self):
@@ -608,42 +567,6 @@ class DefectEntry(MSONable):
                           (kb * temperature))
 
         return conc
-
-    def as_dict(self):
-        """
-        Json-serializable dict representation of DefectEntry
-        """
-        d = {"@module": self.__class__.__module__,
-             "@class": self.__class__.__name__,
-             "defect": self.defect.as_dict(),
-             "uncorrected_energy": self.uncorrected_energy,
-             "corrections": self.corrections,
-             "parameters": self.parameters,
-             "entry_id": self.entry_id,
-             "task_id": self.task_id}
-        return d
-
-    @classmethod
-    def from_dict(cls, d):
-        """
-        Reconstitute a DefectEntry object from a dict representation created using
-        as_dict().
-
-        Args:
-            d (dict): dict representation of DefectEntry.
-
-        Returns:
-            DefectEntry object
-        """
-        defect = MontyDecoder().process_decoded( d["defect"])
-        uncorrected_energy = d["uncorrected_energy"]
-        corrections = d.get("corrections", None)
-        parameters = d.get("parameters", None)
-        entry_id = d.get("entry_id", None)
-        task_id = d.get("task_id", None)
-
-        return cls(defect, uncorrected_energy, corrections=corrections,
-                   parameters=parameters, entry_id=entry_id, task_id=task_id)
 
     def __repr__(self):
         """
