@@ -404,7 +404,7 @@ class DefectCompatibility(MSONable):
                                            to_unit_cell=True)
         sc_scale = defect_entry.parameters.get("scaling_matrix", (1,1,1))
         struct_for_defect_site.make_supercell(sc_scale)
-        defect_site_coords = struct_for_defect_site[0].coords
+        defect_site_coords = struct_for_defect_site.sites[0].coords
 
         #determine the defect index within the structure and append fractional_coordinates
         if not isinstance(defect_entry.defect, Vacancy):
