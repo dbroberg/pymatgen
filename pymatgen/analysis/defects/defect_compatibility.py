@@ -38,7 +38,7 @@ class DefectCompatibility(MSONable):
     required settings for defect_entry.parameters:
         freysoldt: ["axis_grid", "bulk_planar_averages", "defect_planar_averages", "dielectric"]
         kumagai: ["dim", "bulk_atomic_site_averages", "defect_atomic_site_averages", "site_matching_indices",
-                    "dielectric]
+                    "dielectric"]
         bandfilling: ["eigenvalues", "kpoint_weights", "potalign", "vbm", "cbm"]
         bandshifting: ["hybrid_cbm", "hybrid_vbm", "num_hole_vbm", "num_elec_cbm", "vbm", "cbm"]
         defect relaxation/structure analysis: ["final_defect_structure", "initial_defect_structure", "sampling_radius"]
@@ -402,6 +402,8 @@ class DefectCompatibility(MSONable):
                                            [defect_entry.defect.site.specie],
                                            [defect_entry.defect.site.frac_coords],
                                            to_unit_cell=True)
+        sc_scale = defect_entry.parameters.get("scaling_matrix", (1,1,1))
+        struct_for_defect_site.make_supercell(sc_scale)
         defect_site_coords = struct_for_defect_site[0].coords
 
         #determine the defect index within the structure and append fractional_coordinates
@@ -415,7 +417,7 @@ class DefectCompatibility(MSONable):
             #if vacancy than create periodic site for finding distance from other atoms to defect
             defindex = None
             vac_site = PeriodicSite('H', defect_site_coords,
-                                    initial_defect_structure.lattice, to_unit_cell=True,
+                                    struct_for_defect_site.lattice, to_unit_cell=True,
                                     coords_are_cartesian=True)
             def_frac_coords = vac_site.frac_coords
 
