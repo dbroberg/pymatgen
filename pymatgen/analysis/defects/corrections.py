@@ -698,22 +698,28 @@ class BandEdgeShiftingCorrection(DefectCorrection):
 
 class LevelShiftCorrection(DefectCorrection):
     """
-    A class for DefectLevelShiftingCorrection class. Largely adapted from PyCDT code
+    A class for DefectLevelShiftingCorrection class. Contains several different
+    Level shifting approaches that can be tried:
+        'iA' = shift OCCUPIED band edge states 100% with the band edges (only shift occupied states, not holes)
+        'iB' = shift band edge states 100% with the band edges (do hole shifting approach)
+        TODO: 'ii' = Use pawpyseed % to shift KS levels in gap + use approach iA (TODO = iB could also be tried)
+        TODO: 'iii' = If KS level is localized then dont shift it, otherwise do (ii)
+        TODO: 'iv' = If localized level is found in host and there are occupied states
+                    near band edges (like iA) then shift to that level. Otherwise 100% with band edges
+        TODO: 'v' = If TL exists then move it by amount equal to the KS level closest to it.
+                Could also not shift it if wf analyzer finds it to be localized
+                (this requires knowing TL levels...should be a dpd correction?)
 
     Requires some parameters in the DefectEntry to properly function:
-        hybrid_cbm
-            CBM of HYBRID bulk calculation
-
-        hybrid_vbm
-            VBM of HYBRID bulk calculation
+        vbm
 
         cbm
-            CBM of bulk calculation (or band structure calculation of bulk);
-            calculated on same level of theory as the eigenvalues list (ex. GGA defects -> need GGA cbm
 
-        vbm
-            VBM of bulk calculation (or band structure calculation of bulk);
-            calculated on same level of theory as the eigenvalues list (ex. GGA defects -> need GGA vbm
+        ["bandshift_meta"]["cbmshift"]
+            Shift to apply to GGA CBM to get to CBM of HYBRID bulk calculation
+
+        ["bandshift_meta"]["vbmshift"]
+            Shift to apply to GGA VBM to get to VBM of HYBRID bulk calculation
 
         num_hole_vbm
             number of free holes that were found in valence band for the defect calculation
@@ -723,36 +729,97 @@ class LevelShiftCorrection(DefectCorrection):
             number of free electrons that were found in the conduction band for the defect calculation
             calculated in the metadata of the BandFilling Correction
 
+        potalign
+
+        eigenvalues
+
+        kpoint_weights
+
+        ["defect_ks_delocal_data"]
+
     """
 
-    def __init__(self):
-        self.metadata = {
-            "vbmshift": 0.,
-            "cbmshift": 0.,
-        }
+    def __init__(self, tolerance = 0.01, tol_shallow_acceptors=.15):
+        self.tolerance = tolerance
+        self.tol_shallow_acceptors = tol_shallow_acceptors
+        self.metadata = {}
 
-    def get_correction(self, entry, shift_approach='carriers_100percent_with_edges'):
+    def get_correction(self, entry, shift_approach='iA'):
         """
         Gets the ShallowLevel correction for a defect entry
         """
-        # TODO: add smarter defect level shifting based on defect level projection onto host bands
-        hybrid_cbm = entry.parameters["hybrid_cbm"]
-        hybrid_vbm = entry.parameters["hybrid_vbm"]
         vbm = entry.parameters["vbm"]
         cbm = entry.parameters["cbm"]
+        vbmshift = entry.parameters["bandshift_meta"]["vbmshift"]
+        cbmshift = entry.parameters["bandshift_meta"]["cbmshift"]
+
         num_hole_vbm = entry.parameters["num_hole_vbm"]
         num_elec_cbm = entry.parameters["num_elec_cbm"]
 
-        self.metadata["vbmshift"] = hybrid_vbm - vbm  # note vbmshift has UPWARD as positive convention
-        self.metadata["cbmshift"] = hybrid_cbm - cbm  # note cbmshift has UPWARD as positive convention
+        potalign = entry.parameters["potalign"]
 
-        if shift_approach == 'carriers_100percent_with_edges':
-            # negative sign has to do with fact that these are holes
-            hole_vbm_shift_correction = -1. * num_hole_vbm * self.metadata["vbmshift"]
-            elec_cbm_shift_correction = num_elec_cbm * self.metadata["cbmshift"]
-            total_shift_corr = { "hole_vbm_shift_correction": hole_vbm_shift_correction,
-                                 "elec_cbm_shift_correction": elec_cbm_shift_correction
-                                 }
+        eigenvalues = entry.parameters["eigenvalues"]
+        kpoint_weights = entry.parameters["kpoint_weights"]
+
+        core_occupation_value = list(eigenvalues.values())[0][0][0][1]  # get occupation of a core eigenvalue
+        if len(eigenvalues.keys()) == 1:
+            # needed because occupation of non-spin calcs is sometimes still 1... should be 2
+            spinfctr = 2. if core_occupation_value == 1. else 1.
+        elif len(eigenvalues.keys()) == 2:
+            spinfctr = 1.
+        else:
+            raise ValueError("Eigenvalue keys greater than 2")
+
+        # for tracking mid gap states...
+        shifted_cbm = potalign + cbm  # shift cbm with potential alignment
+        shifted_vbm = potalign + vbm  # shift vbm with potential alignment
+
+        # grab KS wf localization information
+        lbl_dict = entry.parameters['defect_ks_delocal_data']['localized_band_indices']
+        localized_band_indices = set([band_index for spin_list in lbl_dict.values() for band_index in spin_list])
+
+        # grab Pawpyseed information
+
+
+        # grab KS eigenvalue energy and occupation information
+        num_occupied_acceptor = 0.
+        for spinset in eigenvalues.values():
+            for kptset, weight in zip(spinset, kpoint_weights):
+                for eig, occu in kptset:  # eig is eigenvalue and occu is occupation
+                    # if (occu and (eig > shifted_cbm - self.resolution)):  # donor MB correction
+                    #     bf_corr += weight * spinfctr * occu * (eig - shifted_cbm)  # "move the electrons down"
+                    #     self.metadata["num_elec_cbm"] += weight * spinfctr * occu
+                    # elif (occu != core_occupation_value) and (eig <= shifted_vbm + self.resolution):  # acceptor MB correction
+                    #     bf_corr += weight * spinfctr * (core_occupation_value - occu) * (shifted_vbm - eig)  # "move the holes up"
+                    #     self.metadata["num_hole_vbm"] += weight * spinfctr * (core_occupation_value - occu)
+                    if occu and (eig > shifted_vbm + self.tolerance) and \
+                        (eig <= shifted_vbm + self.tolerance + self.tol_shallow_acceptors):
+                        num_occupied_acceptor += weight * spinfctr * occu
+                    # elif
+
+        total_shift_corr = {}
+        corr_type, AB_type = shift_approach[:-1], shift_approach[-1]
+        if AB_type not in ["A", "B"]:
+            corr_type = shift_approach
+        elif AB_type == 'A':
+            occu_acceptor_shift = num_occupied_acceptor * vbmshift
+            elec_cbm_shift_correction = num_elec_cbm * cbmshift
+            total_shift_corr.update( { "occu_acceptor_shift": occu_acceptor_shift,
+                                       "elec_cbm_shift_correction": elec_cbm_shift_correction
+                                       })
+            self.metadata.update( {'num_occupied_acceptor': num_occupied_acceptor})
+        elif AB_type == 'B':
+            hole_vbm_shift_correction = -1. * num_hole_vbm * vbmshift # negative sign because these are holes
+            elec_cbm_shift_correction = num_elec_cbm * cbmshift
+            total_shift_corr.update( { "hole_vbm_shift_correction": hole_vbm_shift_correction,
+                                       "elec_cbm_shift_correction": elec_cbm_shift_correction
+                                       })
+
+        if corr_type == 'ii':
+
+
+
+
         else:
             raise ValueError('Shift_approach = {} not recognized...'.format( shift_approach))
 
