@@ -36,10 +36,22 @@ class DefectPhaseDiagram(MSONable):
         a) stability of charge states for a given defect,
         b) list of all formation ens
         c) transition levels in the gap
-        d)
 
     Args:
         dentries ([DefectEntry]): A list of DefectEntry objects
+        vbm (float): Valence Band energy to use for all defect entries.
+            NOTE if using band shifting-type correction then this VBM
+            should still be that of the GGA calculation (correction accounts for shift).
+        band_gap (float): Band gap to use for all defect entries.
+            NOTE if using band shifting-type correction then this gap
+            should still be that of the Hybrid calculation you are shifting to.
+        filter_compatible (bool): Whether to consider entries which were ruled
+            incompatible by the DefectComaptibility class. Note this must be set to False
+            if you desire a suggestion for larger supercell sizes.
+            Default is True (to omit calculations which have "is_compatible"=False in
+                DefectEntry'sparameters)
+        metadata (dict): Dictionary of metadata to store with the PhaseDiagram. Has
+            no impact on calculations.
     """
 
     def __init__(self, entries, vbm, band_gap, filter_compatible=True, metadata={}):
@@ -336,12 +348,13 @@ class DefectPhaseDiagram(MSONable):
         recommendations = {}
 
         for def_type in self.defect_types:
-            defect = self.stable_entries[def_type][0].copy()
+            template_entry = self.stable_entries[def_type][0].copy()
             defect_indices = [int(def_ind) for def_ind in def_type.split('@')[-1].split('-')]
 
             for charge in self.finished_charges[def_type]:
-                chg_defect = defect.copy()
+                chg_defect = template_entry.defect.copy()
                 chg_defect.set_charge ( charge)
+
                 for entry_index in defect_indices:
                     entry = self.entries[entry_index]
                     if entry.charge == charge:
@@ -363,7 +376,7 @@ class DefectPhaseDiagram(MSONable):
                         recommendations[def_type] = []
                     recommendations[def_type].append( charge)
 
-        return
+        return recommendations
 
     def get_transition_level(self, defect_name, q1, q2):
         """

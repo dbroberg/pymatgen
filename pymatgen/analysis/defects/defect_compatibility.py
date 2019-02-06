@@ -25,17 +25,11 @@ __date__ = "Mar 15, 2018"
 
 class DefectCompatibility(MSONable):
     """
-    The DefectCompatibility class combines a list of DefectEntries for a
-    given system and applies corrections / suggests failed jobs that
-    should not be considered
-    Args:
+    The DefectCompatibility class evaluates corrections and delocalization
+    metrics on a DefectEntry. It can only parse based on the available
+    parameters already exist in the parameters of the DefectEntry.
 
-        defect_entries: List of defect_entries to consider.
-        user_defect_qualifiers: a dictionary for specifying the dictionary of qualifiers
-                                for corrections and delocalization analysis.
-                                Defaults are in dictionary above
-
-    required settings for defect_entry.parameters:
+    required settings in defect_entry.parameters for various types of analysis/correction:
         freysoldt: ["axis_grid", "bulk_planar_averages", "defect_planar_averages", "dielectric"]
         kumagai: ["dim", "bulk_atomic_site_averages", "defect_atomic_site_averages", "site_matching_indices",
                     "dielectric"]
@@ -79,7 +73,6 @@ class DefectCompatibility(MSONable):
             given initialization of class. If delocalized, flag entry as delocalized
             3) update corrections to defect entry and flag as del
 
-
         Corrections are applied based on:
             i) if free charges are more than free_chg_cutoff then will not apply charge correction,
                 because it no longer is applicable
@@ -87,6 +80,10 @@ class DefectCompatibility(MSONable):
             iii) only use BandFilling correction if use_bandfilling is set to True
             iv) only use BandEdgeShift correction if use_bandedgeshift is set to True
         """
+        for struct_key in ["bulk_sc_structure", "initial_defect_structure", "final_defect_structure"]:
+            if struct_key in defect_entry.parameters.keys() and isinstance(defect_entry.parameters[struct_key], dict):
+                defect_entry.parameters[struct_key] = Structure.from_dict(defect_entry.parameters[struct_key])
+
         self.perform_all_corrections(defect_entry)
 
         self.delocalization_analysis(defect_entry)
@@ -397,29 +394,7 @@ class DefectCompatibility(MSONable):
         initial_defect_structure = defect_entry.parameters['initial_defect_structure']
         final_defect_structure = defect_entry.parameters['final_defect_structure']
         radius_to_sample = defect_entry.parameters['sampling_radius']
-
-        struct_for_defect_site = Structure(defect_entry.defect.bulk_structure.copy().lattice,
-                                           [defect_entry.defect.site.specie],
-                                           [defect_entry.defect.site.frac_coords],
-                                           to_unit_cell=True)
-        sc_scale = defect_entry.parameters.get("scaling_matrix", (1,1,1))
-        struct_for_defect_site.make_supercell(sc_scale)
-        defect_site_coords = struct_for_defect_site.sites[0].coords
-
-        #determine the defect index within the structure and append fractional_coordinates
-        if not isinstance(defect_entry.defect, Vacancy):
-            poss_deflist = sorted(
-                initial_defect_structure.get_sites_in_sphere(defect_site_coords,
-                                                             2, include_index=True), key=lambda x: x[1])
-            defindex = poss_deflist[0][2]
-            def_frac_coords = poss_deflist[0][0].frac_coords
-        else:
-            #if vacancy than create periodic site for finding distance from other atoms to defect
-            defindex = None
-            vac_site = PeriodicSite('H', defect_site_coords,
-                                    struct_for_defect_site.lattice, to_unit_cell=True,
-                                    coords_are_cartesian=True)
-            def_frac_coords = vac_site.frac_coords
+        def_frac_coords = defect_entry.parameters['defect_frac_sc_coords']
 
         initsites = [site.frac_coords for site in initial_defect_structure]
         finalsites = [site.frac_coords for site in final_defect_structure]
@@ -428,14 +403,20 @@ class DefectCompatibility(MSONable):
         #calculate distance moved as a function of the distance from the defect
         distdata = []
         totpert = 0.
-        for ind in range(len( initsites)):
-            if ind == defindex:
+        defindex = None
+        for ind, site in enumerate(initial_defect_structure.sites):
+            if site.distance_and_image_from_frac_coords( def_frac_coords)[0] < 0.01:
+                defindex = ind
                 continue
             else:
                 totpert += distmatrix[ind, ind]
                 # append [distance to defect, distance traveled, index in structure]
                 distance_to_defect = initial_defect_structure.lattice.get_distance_and_image( def_frac_coords, initsites[ind])[0]
-                distdata.append([ distance_to_defect, distmatrix[ind, ind], ind])
+                distdata.append([ distance_to_defect, distmatrix[ind, ind], int(ind)])
+
+        if defindex is None and not isinstance(defect_entry.defect, Vacancy):
+            raise ValueError("fractional coordinate for defect could not be "
+                             "identified in initial_defect_structure")
 
         distdata.sort()
         tot_relax_outside_rad = 0.
@@ -462,7 +443,7 @@ class DefectCompatibility(MSONable):
             structure_tot_relax_compatible and structure_perc_relax_compatible) else False
 
         #NEXT: do single defect delocalization analysis (requires similar data, so might as well run in tandem
-        # with structural delocalization
+        # with structural delocalization)
         defectsite_relax_analyze_meta = {}
         if isinstance(defect_entry.defect,Vacancy):
             defectsite_relax_allows_compatible = True
