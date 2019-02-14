@@ -153,7 +153,7 @@ class DefectPhaseDiagram(MSONable):
         all_eform = [one_def.formation_energy(fermi_level=self.band_gap/2.) for one_def in self.entries]
         min_y_lim = min(all_eform) - 30
         max_y_lim = max(all_eform) + 30
-        limits = [[-1, self.band_gap + 1], [min_y_lim, max_y_lim]]
+        limits = [[-3, self.band_gap + 3], [min_y_lim, max_y_lim]]
 
         stable_entries = {}
         finished_charges = {}
