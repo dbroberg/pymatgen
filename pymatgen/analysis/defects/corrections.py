@@ -702,9 +702,9 @@ class LevelShiftCorrection(DefectCorrection):
     Level shifting approaches that can be tried:
         'iA' = shift OCCUPIED band edge states 100% with the band edges (only shift occupied states, not holes)
         'iB' = shift band edge states 100% with the band edges (do hole shifting approach)
-        TODO: 'ii' = Use pawpyseed % to shift KS levels in gap + use approach iA (TODO = iB could also be tried)
-        TODO: 'iii' = If KS level is localized then dont shift it, otherwise do (ii)
-        TODO: 'iv' = If localized level is found in host and there are occupied states
+        'ii' = Use pawpyseed % to shift KS levels in gap + use approach iA (TODO = iB could also be tried)
+        'iii' = If KS level is localized then dont shift it, otherwise do (ii)
+        'iv' = If localized level is found in host and there are occupied states
                     near band edges (like iA) then shift to that level. Otherwise 100% with band edges
         TODO: 'v' = If TL exists then move it by amount equal to the KS level closest to it.
                 Could also not shift it if wf analyzer finds it to be localized
@@ -739,15 +739,16 @@ class LevelShiftCorrection(DefectCorrection):
 
     """
 
-    def __init__(self, tolerance = 0.01, tol_shallow_acceptors=.15):
+    def __init__(self, tolerance = 0.01, tol_shallow_defect=.15):
         self.tolerance = tolerance
-        self.tol_shallow_acceptors = tol_shallow_acceptors
+        self.tol_shallow_defect = tol_shallow_defect
         self.metadata = {}
 
     def get_correction(self, entry, shift_approach='iA'):
         """
         Gets the ShallowLevel correction for a defect entry
         """
+        shift_approach = shift_approach.lower()
         vbm = entry.parameters["vbm"]
         cbm = entry.parameters["cbm"]
         vbmshift = entry.parameters["bandshift_meta"]["vbmshift"]
@@ -774,41 +775,99 @@ class LevelShiftCorrection(DefectCorrection):
         shifted_cbm = potalign + cbm  # shift cbm with potential alignment
         shifted_vbm = potalign + vbm  # shift vbm with potential alignment
 
-        # grab KS wf localization information
-        lbl_dict = entry.parameters['defect_ks_delocal_data']['localized_band_indices']
-        localized_band_indices = set([band_index for spin_list in lbl_dict.values() for band_index in spin_list])
-
-        # grab Pawpyseed information
-
-
         # grab KS eigenvalue energy and occupation information
         num_occupied_acceptor = 0.
+        occupied_KS_deep_states = [] #grab KS band indices which are occupied and in gap and not "shallow acceptor" type
+        all_possible_KS_defect_states = [] #grab all possible defect states (shallow states included)
         for spinset in eigenvalues.values():
             for kptset, weight in zip(spinset, kpoint_weights):
-                for eig, occu in kptset:  # eig is eigenvalue and occu is occupation
-                    # if (occu and (eig > shifted_cbm - self.resolution)):  # donor MB correction
-                    #     bf_corr += weight * spinfctr * occu * (eig - shifted_cbm)  # "move the electrons down"
-                    #     self.metadata["num_elec_cbm"] += weight * spinfctr * occu
-                    # elif (occu != core_occupation_value) and (eig <= shifted_vbm + self.resolution):  # acceptor MB correction
-                    #     bf_corr += weight * spinfctr * (core_occupation_value - occu) * (shifted_vbm - eig)  # "move the holes up"
-                    #     self.metadata["num_hole_vbm"] += weight * spinfctr * (core_occupation_value - occu)
-                    if occu and (eig > shifted_vbm + self.tolerance) and \
-                        (eig <= shifted_vbm + self.tolerance + self.tol_shallow_acceptors):
-                        num_occupied_acceptor += weight * spinfctr * occu
-                    # elif
+                for bandind, bandset in enumerate(kptset):
+                    eig, occu = bandset # eig is eigenvalue and occu is occupation
+                    if occu and (eig > shifted_vbm + self.tolerance) and (eig < shifted_cbm - self.tolerance):
+                        all_possible_KS_defect_states.append( bandind)
+                        if (eig <= shifted_vbm + self.tolerance + self.tol_shallow_defect):
+                            num_occupied_acceptor += weight * spinfctr * occu
+                        elif (eig < shifted_cbm - self.tolerance - self.tol_shallow_defect):
+                            occupied_KS_deep_states.append( bandind)
+
+        occupied_KS_deep_states = list(set(occupied_KS_deep_states))
+        all_possible_KS_defect_states = list(set(all_possible_KS_defect_states))
+
+        # grab KS wf localization information
+        lbl_dict = entry.parameters['defect_ks_delocal_data']['localized_band_indices']
+        localized_band_indices = list(set([int(band_index) for spin_list in lbl_dict.values()
+                                           for band_index in spin_list]))
+
+        # If occupied KS levels exist, grab eigenvalues and occupation for their band indices
+        # also grab eigenvalue information for any possible localized band indices
+        KS_defect_energy_and_occu_dict = {}
+        local_band_energy_dict = {}
+        if len(all_possible_KS_defect_states):
+            for spinset in eigenvalues.values():
+                for kptset, weight in zip(spinset, kpoint_weights):
+                    for bandind, bandset in enumerate(kptset):
+                        eig, occu = bandset  # eig is eigenvalue and occu is occupation
+
+                        if bandind in all_possible_KS_defect_states:
+                            # store list of [eigenvalue, kpt weight, weighted occupation]
+                            if bandind in KS_defect_energy_and_occu_dict.keys():
+                                KS_defect_energy_and_occu_dict[bandind].append( [eig, weight, weight * spinfctr * occu])
+                            else:
+                                KS_defect_energy_and_occu_dict[bandind] = [[eig, weight, weight * spinfctr * occu]]
+
+                        if bandind in localized_band_indices:
+                            # store list of [eigenvalue, kpt weight]
+                            if bandind in local_band_energy_dict.keys():
+                                local_band_energy_dict[bandind].append( [eig, weight])
+                            else:
+                                local_band_energy_dict[bandind] = [[eig, weight]]
+
+        # grab Pawpyseed information -> is this needed?? Or the info already exists??
+        pawpy_band_proj_md = {} #key is band index, value is dict with keys
+        #                           {'perc_vbm_shift', 'perc_cbm_shift', 'wgted_eigen', 'tot_occu', 'shift_corr'}
+        for bandind, eig_occu_list in KS_defect_energy_and_occu_dict.items():
+            eig_vec = np.array( eig_occu_list)[:, 0]
+            wgt_vec = np.array( eig_occu_list)[:, 1]
+            wgt_vec /= wgt_vec.sum()
+            wgt_avg_eigen = np.dot( eig_vec, wgt_vec)
+
+            occu  =  np.array( eig_occu_list)[:, 2].sum()
+            # print("\t{}: wgt_avg_eig = {} , occu = {}".format( bandind, wgt_avg_eigen, occu))
+
+            pawpy = entry.parameters['defect_ks_delocal_data']['pawpyseed'][bandind]
+            pawpy_band_proj = [np.array( pawpy[0]).mean(), np.array( pawpy[1]).mean()] #just taking average of two spins
+            # BELOW is a FAKE pawpy parser
+            # if wgt_avg_eigen <= shifted_vbm + entry.parameters['gap'] / 2.:
+            #     pawpy_band_proj = [1., 0.]
+            # else:
+            #     pawpy_band_proj = [0., 1.]
+
+            wgted_shift = (pawpy_band_proj[0] * vbmshift + pawpy_band_proj[1] * cbmshift)
+            this_corr = wgted_shift * occu
+
+            pawpy_band_proj_md.update({bandind: {'perc_vbm_shift': pawpy_band_proj[0],
+                                                'perc_cbm_shift': pawpy_band_proj[1],
+                                                'wgted_eigen': wgt_avg_eigen,
+                                                'wgted_shift': wgted_shift, 'tot_occu': occu, 'shift_corr': this_corr}
+                                       })
+
 
         total_shift_corr = {}
         corr_type, AB_type = shift_approach[:-1], shift_approach[-1]
-        if AB_type not in ["A", "B"]:
+        if AB_type not in ["a", "b"]:
             corr_type = shift_approach
-        elif AB_type == 'A':
+        elif AB_type == 'a':
+            if corr_type == 'iv':
+                raise ValueError("SHOULD NOT include free carrier shifts at edge?")
             occu_acceptor_shift = num_occupied_acceptor * vbmshift
             elec_cbm_shift_correction = num_elec_cbm * cbmshift
             total_shift_corr.update( { "occu_acceptor_shift": occu_acceptor_shift,
                                        "elec_cbm_shift_correction": elec_cbm_shift_correction
                                        })
             self.metadata.update( {'num_occupied_acceptor': num_occupied_acceptor})
-        elif AB_type == 'B':
+        elif AB_type == 'b':
+            if corr_type == 'iv':
+                raise ValueError("SHOULD NOT include free carrier shifts at edge?")
             hole_vbm_shift_correction = -1. * num_hole_vbm * vbmshift # negative sign because these are holes
             elec_cbm_shift_correction = num_elec_cbm * cbmshift
             total_shift_corr.update( { "hole_vbm_shift_correction": hole_vbm_shift_correction,
@@ -816,11 +875,111 @@ class LevelShiftCorrection(DefectCorrection):
                                        })
 
         if corr_type == 'ii':
+            print("Running type ii level shift correction (always do Pawpyseed):")
+            tot_corr = 0.
+            for bandind in occupied_KS_deep_states: #loop over deep (non shallow state) indices
+                vdict = pawpy_band_proj_md[bandind]
+                print("\t{}: eigen (rel to vbm) = {}, occu = {}, corr = {}".format( bandind, vdict["wgted_eigen"]-shifted_vbm,
+                                                                                    vdict["tot_occu"],  vdict["shift_corr"]))
+                tot_corr += vdict["shift_corr"]
 
+            print("\nFinal Pawpyseed correction = {}".format( tot_corr))
 
+            self.metadata.update( {'pawpy_band_proj_md': pawpy_band_proj_md.copy()})
+            total_shift_corr.update( { "pawpyseed_always_KS_shift": tot_corr})
 
+        elif corr_type == 'iii':
+            print("Running type iii level shift correction (only do Pawpyseed when not detected as localized):")
+            tot_corr = 0.
+            for bandind in occupied_KS_deep_states:
+                vdict = pawpy_band_proj_md[bandind]
+                print("\t{}: eigen (rel to vbm) = {}, occu = {}, corr = {}".format( bandind, vdict["wgted_eigen"]-shifted_vbm,
+                                                                                    vdict["tot_occu"],  vdict["shift_corr"]))
+                if bandind in localized_band_indices:
+                    print("\tLOCALIZED  LEVEL! will not move.")
+                else:
+                    tot_corr += vdict["shift_corr"]
 
-        else:
+            print("\nFinal Pawpyseed correction = {}".format( tot_corr))
+
+            self.metadata.update( {'pawpy_band_proj_md': pawpy_band_proj_md.copy(),
+                                   'localized_levels': localized_band_indices[:]})
+            total_shift_corr.update( { "pawpyseed_nonlocal_KS_shift": tot_corr})
+
+        elif corr_type == 'iv':
+            print("Running type iv level shift correction (if non-localized levels are not occupied, then try to find localized level "
+                  "for it; if this isnt doable then do Pawpyseed):")
+            # first create wgt energy eigen value of all localized levels...
+            wgt_avg_eigen_for_each_local_band = {}
+            for bandind, eig_occu_list in local_band_energy_dict.items():
+                eig_vec = np.array( eig_occu_list)[:, 0]
+                wgt_vec = np.array( eig_occu_list)[:, 1]
+                wgt_vec /= wgt_vec.sum()
+                wgt_avg_eigen = np.dot( eig_vec, wgt_vec)
+                wgt_avg_eigen_for_each_local_band[bandind] = wgt_avg_eigen
+
+            #next consider all things that could possibly be shifted:
+            # (i) occupied KS levels which are NOT already localized,
+            # (ii) occupied acceptor/donors states which are NOT already localized
+            track_localized_mapping = wgt_avg_eigen_for_each_local_band.copy() #so I can delete things
+
+            smart_shift_md = {'all_possible_KS_defect_states': all_possible_KS_defect_states[:],
+                              'track_for_corr': {}}
+            tot_corr = 0.
+            needs_shifting = []
+            for bandind in all_possible_KS_defect_states:
+                eigval = round(pawpy_band_proj_md[bandind]["wgted_eigen"]-shifted_vbm,2)
+                if bandind in track_localized_mapping.keys():
+                    smart_shift_md['track_for_corr'].update( {bandind: {'type': 'localized', 'corr': 0.}})
+                    del track_localized_mapping[bandind] # dont want to recount this level later
+                    print("\t{} ({} above vbm) is localized! No correction needed.".format( bandind, eigval))
+                else:
+                    print("\t{} ({} above vbm) needs shifting!".format( bandind, eigval))
+                    needs_shifting.append( bandind)
+
+            find_smallest_shifts = []
+            for bandind in needs_shifting:
+                bands_eigen = pawpy_band_proj_md[bandind]['wgted_eigen']
+                find_smallest_shifts.extend( [[abs(val - bands_eigen), tb, bandind] for tb, val in track_localized_mapping.items()])
+
+            find_smallest_shifts.sort()
+            for diff, tb, bandind in find_smallest_shifts:
+                if (bandind in smart_shift_md['track_for_corr'].keys()):
+                    continue
+                elif diff > max(abs(vbmshift), abs(cbmshift)):  # if shift is bigger than the host band shifts then use pawpyshift
+                    this_corr = pawpy_band_proj_md[bandind]["shift_corr"]
+                    smart_shift_md['track_for_corr'].update( {bandind: {'type': 'pawpyseed', 'corr': this_corr}})
+                    tot_corr += this_corr
+                    print("\t{} could not be matched to localized level. Using pawpyseed.".format( bandind))
+                else:
+                    shifting_to = pawpy_band_proj_md[tb]['wgted_eigen'] - pawpy_band_proj_md[bandind]['wgted_eigen']
+                    occu = pawpy_band_proj_md[bandind]['tot_occu']
+                    this_corr = shifting_to * occu
+                    smart_shift_md['track_for_corr'].update( {bandind: {'type': 'shift_to_{}'.format( tb),
+                                                                        'corr': this_corr}})
+                    print("\t{} matched to localized level {} away. Using this for shift.".format( bandind,
+                                                                                                   round(pawpy_band_proj_md[tb]['wgted_eigen'],2)))
+
+            #if ran out of localized levels, run through and confirm that all possible ks states matched
+            for bandind in all_possible_KS_defect_states:
+                if bandind not in smart_shift_md['track_for_corr'].keys():
+                    this_corr = pawpy_band_proj_md[bandind]["shift_corr"]
+                    smart_shift_md['track_for_corr'].update( {bandind: {'type': 'pawpyseed', 'corr': this_corr}})
+                    tot_corr += this_corr
+                    print("\t{} could not be matched to localized level. Using pawpyseed.".format( bandind))
+
+            if len( smart_shift_md['track_for_corr'].keys()) != len( all_possible_KS_defect_states):
+                raise ValueError("Something went wrong with level matching routine?")
+
+            print("\nFinal Smart KS shift correction = {}".format( tot_corr))
+
+            self.metadata.update( {'pawpy_band_proj_md': pawpy_band_proj_md.copy(),
+                                   'smart_shift_md': smart_shift_md.copy(),
+                                   'wgt_avg_eigen_for_each_local_band': wgt_avg_eigen_for_each_local_band.copy()})
+
+            total_shift_corr.update( { "smart_KS_shift": tot_corr})
+
+        elif corr_type != 'i':
             raise ValueError('Shift_approach = {} not recognized...'.format( shift_approach))
 
         entry.parameters["levelshift_meta"] = dict(self.metadata)
