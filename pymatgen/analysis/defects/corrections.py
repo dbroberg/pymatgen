@@ -704,7 +704,7 @@ class LevelShiftCorrection(DefectCorrection):
         'ii' = Use pawpyseed % to shift KS levels in gap + use approach iA (TODO = iB could also be tried)
         'iii' = If KS level is localized then dont shift it, otherwise do (ii)
         'iv' = If localized level is found in host and there are occupied states
-                    near band edges (like iA) then shift to that level. Otherwise 100% with band edges
+                    near band edges (like iA) then shift to that level. Otherwise shift 100% with band edges
         TODO: 'v' = If TL exists then move it by amount equal to the KS level closest to it.
                 Could also not shift it if wf analyzer finds it to be localized
                 (this requires knowing TL levels...should be a dpd correction?)
@@ -801,11 +801,16 @@ class LevelShiftCorrection(DefectCorrection):
         # also grab eigenvalue information for any possible localized band indices
         KS_defect_energy_and_occu_dict = {}
         local_band_energy_dict = {}
+        all_band_eigen_and_occu = {}
         if len(all_possible_KS_defect_states):
             for spinset in eigenvalues.values():
                 for kptset, weight in zip(spinset, kpoint_weights):
                     for bandind, bandset in enumerate(kptset):
                         eig, occu = bandset  # eig is eigenvalue and occu is occupation
+                        if bandind in all_band_eigen_and_occu.keys():
+                            all_band_eigen_and_occu[bandind].append( [eig, weight, weight * spinfctr * occu])
+                        else:
+                            all_band_eigen_and_occu[bandind] = [[eig, weight, weight * spinfctr * occu]]
 
                         if bandind in all_possible_KS_defect_states:
                             # store list of [eigenvalue, kpt weight, weighted occupation]
@@ -824,7 +829,10 @@ class LevelShiftCorrection(DefectCorrection):
         # grab Pawpyseed information -> is this needed?? Or the info already exists??
         pawpy_band_proj_md = {} #key is band index, value is dict with keys
         #                           {'perc_vbm_shift', 'perc_cbm_shift', 'wgted_eigen', 'tot_occu', 'shift_corr'}
-        for bandind, eig_occu_list in KS_defect_energy_and_occu_dict.items():
+        # for bandind, eig_occu_list in KS_defect_energy_and_occu_dict.items():
+        # for bandind in entry.parameters['defect_ks_delocal_data']['pawpyseed'].keys(): #TODO -> uncomment these two lines if running pawpyseed
+        #     eig_occu_list = all_band_eigen_and_occu[bandind]
+        for bandind, eig_occu_list in all_band_eigen_and_occu.items(): #IF dont have real pawpyseed...
             eig_vec = np.array( eig_occu_list)[:, 0]
             wgt_vec = np.array( eig_occu_list)[:, 1]
             wgt_vec /= wgt_vec.sum()
@@ -833,13 +841,13 @@ class LevelShiftCorrection(DefectCorrection):
             occu  =  np.array( eig_occu_list)[:, 2].sum()
             # print("\t{}: wgt_avg_eig = {} , occu = {}".format( bandind, wgt_avg_eigen, occu))
 
-            pawpy = entry.parameters['defect_ks_delocal_data']['pawpyseed'][bandind]
-            pawpy_band_proj = [np.array( pawpy[0]).mean(), np.array( pawpy[1]).mean()] #just taking average of two spins
+            # pawpy = entry.parameters['defect_ks_delocal_data']['pawpyseed'][bandind]
+            # pawpy_band_proj = [np.array( pawpy[0]).mean(), np.array( pawpy[1]).mean()] #just taking average of two spins
             # BELOW is a FAKE pawpy parser
-            # if wgt_avg_eigen <= shifted_vbm + entry.parameters['gap'] / 2.:
-            #     pawpy_band_proj = [1., 0.]
-            # else:
-            #     pawpy_band_proj = [0., 1.]
+            if wgt_avg_eigen <= shifted_vbm + entry.parameters['gap'] / 2.:
+                pawpy_band_proj = [1., 0.]
+            else:
+                pawpy_band_proj = [0., 1.]
 
             wgted_shift = (pawpy_band_proj[0] * vbmshift + pawpy_band_proj[1] * cbmshift)
             this_corr = wgted_shift * occu
