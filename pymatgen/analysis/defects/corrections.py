@@ -831,6 +831,7 @@ class LevelShiftCorrection(DefectCorrection):
         #                           {'perc_vbm_shift', 'perc_cbm_shift', 'wgted_eigen', 'tot_occu', 'shift_corr'}
         # for bandind, eig_occu_list in KS_defect_energy_and_occu_dict.items():
         # for bandind in entry.parameters['defect_ks_delocal_data']['pawpyseed'].keys(): #TODO -> uncomment these two lines if running pawpyseed
+        #TODO -> (3/1) would be cool to have pawpyseed only applied if it stays in gap after the application? Means I can consider levels outside of gap?
         #     eig_occu_list = all_band_eigen_and_occu[bandind]
         for bandind, eig_occu_list in all_band_eigen_and_occu.items(): #IF dont have real pawpyseed...
             eig_vec = np.array( eig_occu_list)[:, 0]
