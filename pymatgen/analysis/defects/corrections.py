@@ -744,7 +744,7 @@ class BandFillingCorrection(DefectCorrection):
 
         entry.parameters["bandfilling_meta"] = dict(self.metadata)
 
-        return {"bandfilling": bf_corr}
+        return {"bandfilling_correction": bf_corr}
 
     def perform_bandfill_corr(self, eigenvalues, kpoint_weights, potalign, vbm, cbm):
         """
@@ -835,7 +835,7 @@ class BandEdgeShiftingCorrection(DefectCorrection):
         entry.parameters["bandshift_meta"] = dict(self.metadata)
 
         return {
-            "vbm_shift_correction": vbm_shift_correction,
+            "bandedgeshifting_correction": vbm_shift_correction,
         }
 
 
