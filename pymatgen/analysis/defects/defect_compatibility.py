@@ -123,8 +123,8 @@ class DefectCompatibility(MSONable):
 
 
         if self.use_bandedgeshift and ("bandshift_meta" in defect_entry.parameters.keys()):
-            corrections.update({'vbm_shift_correction':
-                                    defect_entry.parameters["bandshift_meta"]["vbm_shift_correction"] })
+            corrections.update({'bandedgeshifting_correction':
+                                    defect_entry.parameters["bandshift_meta"]["bandedgeshifting_correction"] })
 
             # also want to update relevant data for phase diagram
             defect_entry.parameters.update({
