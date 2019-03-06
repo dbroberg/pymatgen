@@ -251,7 +251,7 @@ class DefectCompatibility(MSONable):
         bfc_dict = BFC.get_correction(defect_entry)
 
         bandfilling_meta = defect_entry.parameters['bandfilling_meta'].copy()
-        bandfilling_meta.update( {'bandfilling_correction': bfc_dict['bandfilling']})
+        bandfilling_meta.update( {'bandfilling_correction': bfc_dict['bandfilling_correction']})
         defect_entry.parameters.update({'bandfilling_meta': bandfilling_meta,
                                         # also update free holes and electrons for shallow level shifting correction...
                                         'num_hole_vbm': bandfilling_meta['num_hole_vbm'],
