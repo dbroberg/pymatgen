@@ -407,6 +407,53 @@ class DefectPhaseDiagram(MSONable):
 
         return - (ef1 - ef2) / float(q1 - q2)
 
+    def get_dopability_limits(self, chemical_potentials):
+        """
+        Find where lowest defect formation energies first cross zero to
+        determine limits for fermi level.
+
+        Does this by computing formation energy for every stable defect with non-zero charge.
+        If the formation energy changes sign on either side of the band gap, compute
+        the fermi level value where the formation energy is zero
+        (formation energies are lines and basic algebra shows: x_crossing = x1 - (y1 / q)
+        for fermi level, x1, producing formation energy y1)
+        Then use this crossing to determine the highest lower limit and lowest upper limit.
+
+        :param chemical_potentials:
+        :return: lower dopability limit, upper dopability limit
+            (returns None if no limit exists for upper or lower
+            i.e. no negative defect crossing before +/- 3 of band edges
+            OR defect formation energies are entirely zero)
+        """
+        min_fl_range = -3.
+        max_fl_range = self.band_gap + 3.
+
+        lower_lim = None
+        upper_lim = None
+        for def_entry in self.all_stable_entries:
+            if not def_entry.charge:
+                continue
+            min_fl_formen = def_entry.formation_energy(chemical_potentials = chemical_potentials,
+                                                    fermi_level=min_fl_range)
+            max_fl_formen = def_entry.formation_energy(chemical_potentials = chemical_potentials,
+                                                    fermi_level=max_fl_range)
+
+            if min_fl_formen < 0. and max_fl_formen < 0.:
+                print("ERROR: Formation energy is negative through entire gap for entry {} q={}."
+                      " Cannot return dopability limits.".format( def_entry.name, def_entry.charge))
+                return None, None
+            elif np.sign( min_fl_formen) != np.sign( max_fl_formen):
+                x_crossing = min_fl_range - (min_fl_formen / def_entry.charge)
+                if min_fl_formen < 0.:
+                    if lower_lim is None or lower_lim < x_crossing:
+                        lower_lim = x_crossing
+                else:
+                    if upper_lim is None or upper_lim > x_crossing:
+                        upper_lim = x_crossing
+
+        return lower_lim, upper_lim
+
+
     def solve_for_fermi_energy(self, temperature, chemical_potentials, bulk_dos):
         """
         Solve for the Fermi energy self-consistently as a function of T

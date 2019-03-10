@@ -844,6 +844,7 @@ class LevelShiftCorrection(DefectCorrection):
     A class for DefectLevelShiftingCorrection class. Contains several different
     Level shifting approaches that can be tried:
         'iA' = shift OCCUPIED band edge states 100% with the band edges (only shift occupied states, not holes)
+             --> update on 3/8. Not going to shift shallow states because of bad resolution...
         'iB' = shift band edge states 100% with the band edges (do hole shifting approach)
         'ii' = Use pawpyseed % to shift KS levels in gap + use approach iA (TODO = iB could also be tried)
         'iii' = If KS level is localized then dont shift it, otherwise do (ii)
@@ -975,24 +976,33 @@ class LevelShiftCorrection(DefectCorrection):
         #                           {'perc_vbm_shift', 'perc_cbm_shift', 'wgted_eigen', 'tot_occu', 'shift_corr'}
         # for bandind, eig_occu_list in KS_defect_energy_and_occu_dict.items():
         # for bandind in entry.parameters['defect_ks_delocal_data']['pawpyseed'].keys(): #TODO -> uncomment these two lines if running pawpyseed
-        #TODO -> (3/1) would be cool to have pawpyseed only applied if it stays in gap after the application? Means I can consider levels outside of gap?
+        #     # TODO -> (3/1) would be cool to have pawpyseed only applied if it stays in gap after the application? Means I can consider levels outside of gap?
         #     eig_occu_list = all_band_eigen_and_occu[bandind]
-        for bandind, eig_occu_list in all_band_eigen_and_occu.items(): #IF dont have real pawpyseed...
+        for bandind, tmp_eig_occu_list in all_band_eigen_and_occu.items():
+            if 'pawpyseed' in entry.parameters['defect_ks_delocal_data'].keys():
+                if str(bandind) not in entry.parameters['defect_ks_delocal_data']['pawpyseed'].keys():
+                    continue
+                else:
+                    eig_occu_list = all_band_eigen_and_occu[bandind]
+                    pawpy = entry.parameters['defect_ks_delocal_data']['pawpyseed'][str(bandind)]
+                    pawpy_band_proj = [np.array( pawpy[0]).mean(), np.array( pawpy[1]).mean()] #just taking average of two spins
+            else:
+                eig_occu_list = tmp_eig_occu_list[:]
+                pawpy_band_proj = None
+
             eig_vec = np.array( eig_occu_list)[:, 0]
             wgt_vec = np.array( eig_occu_list)[:, 1]
             wgt_vec /= wgt_vec.sum()
             wgt_avg_eigen = np.dot( eig_vec, wgt_vec)
-
             occu  =  np.array( eig_occu_list)[:, 2].sum()
             # print("\t{}: wgt_avg_eig = {} , occu = {}".format( bandind, wgt_avg_eigen, occu))
 
-            # pawpy = entry.parameters['defect_ks_delocal_data']['pawpyseed'][bandind]
-            # pawpy_band_proj = [np.array( pawpy[0]).mean(), np.array( pawpy[1]).mean()] #just taking average of two spins
-            # BELOW is a FAKE pawpy parser
-            if wgt_avg_eigen <= shifted_vbm + entry.parameters['gap'] / 2.:
-                pawpy_band_proj = [1., 0.]
-            else:
-                pawpy_band_proj = [0., 1.]
+            if pawpy_band_proj is None:
+                # a FAKE pawpy parser
+                if wgt_avg_eigen <= shifted_vbm + entry.parameters['gap'] / 2.:
+                    pawpy_band_proj = [1., 0.]
+                else:
+                    pawpy_band_proj = [0., 1.]
 
             wgted_shift = (pawpy_band_proj[0] * vbmshift + pawpy_band_proj[1] * cbmshift)
             this_corr = wgted_shift * occu
@@ -1011,9 +1021,10 @@ class LevelShiftCorrection(DefectCorrection):
         elif AB_type == 'a':
             if corr_type == 'iv':
                 raise ValueError("SHOULD NOT include free carrier shifts at edge?")
-            occu_acceptor_shift = num_occupied_acceptor * vbmshift
+            # occu_acceptor_shift = num_occupied_acceptor * vbmshift
             elec_cbm_shift_correction = num_elec_cbm * cbmshift
-            total_shift_corr.update( { "occu_acceptor_shift": occu_acceptor_shift,
+            total_shift_corr.update( {
+                                       # "occu_acceptor_shift": occu_acceptor_shift,
                                        "elec_cbm_shift_correction": elec_cbm_shift_correction
                                        })
             self.metadata.update( {'num_occupied_acceptor': num_occupied_acceptor})
@@ -1024,7 +1035,73 @@ class LevelShiftCorrection(DefectCorrection):
             elec_cbm_shift_correction = num_elec_cbm * cbmshift
             total_shift_corr.update( { "hole_vbm_shift_correction": hole_vbm_shift_correction,
                                        "elec_cbm_shift_correction": elec_cbm_shift_correction
-                                       })
+                                       } )
+
+# import os
+#
+# def consider_deleting( p):
+#     if ('.tar.gz' in p) or ('vasprun.xml' in p):
+#         print('not deleting ', p)
+#         return
+#     else:
+#         print('removing ', p)
+#         # os.remove( p)
+#         return
+#
+# reconsiderpat = []
+# for f in os.listdir('.'):
+#     print(f)
+#     if not os.path.isdir( f):
+#         continue
+#     else:
+#         for f1 in os.listdir( f):
+#             pat1 = os.path.join( f, f1)
+#             if not os.path.isdir( pat1):
+#                 consider_deleting(pat1)
+#             else:
+#                 for f2 in os.listdir(pat1):
+#                     pat2 = os.path.join(pat1, f2)
+#                     if not os.path.isdir(pat2):
+#                         consider_deleting(pat2)
+#                     else:
+#                         for f3 in os.listdir(pat2):
+#                             pat3 = os.path.join(pat2, f3)
+#                             if not os.path.isdir(pat3):
+#                                 consider_deleting(pat3)
+#                             else:
+#                                 for f4 in os.listdir(pat3):
+#                                     pat4 = os.path.join(pat3, f4)
+#                                     if not os.path.isdir(pat4):
+#                                         consider_deleting(pat4)
+#                                     else:
+#                                         for f5 in os.listdir(pat4):
+#                                             pat5 = os.path.join(pat4, f5)
+#                                             if not os.path.isdir(pat5):
+#                                                 consider_deleting(pat5)
+#                                             else:
+#                                                 for f6 in os.listdir(pat5):
+#                                                     pat6 = os.path.join(pat5, f6)
+#                                                     if not os.path.isdir(pat6):
+#                                                         consider_deleting(pat6)
+#                                                     else:
+#                                                         for f7 in os.listdir(pat6):
+#                                                             pat7 = os.path.join(pat6, f7)
+#                                                             if not os.path.isdir(pat7):
+#                                                                 consider_deleting(pat7)
+#                                                             else:
+#                                                                 for f8 in os.listdir(pat7):
+#                                                                     pat8 = os.path.join(pat7, f8)
+#                                                                     if not os.path.isdir(pat8):
+#                                                                         consider_deleting(pat8)
+#                                                                     else:
+#                                                                         for f9 in os.listdir(pat8):
+#                                                                             pat9 = os.path.join(pat8, f9)
+#                                                                             if not os.path.isdir(pat9):
+#                                                                                 consider_deleting(pat9)
+#                                                                             else:
+#                                                                                 reconsiderpat.append( pat9)
+#
+# print('Finished. Consider following paths:',reconsiderpat)
 
         if corr_type == 'ii':
             print("Running type ii level shift correction (always do Pawpyseed):")
