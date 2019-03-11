@@ -475,7 +475,7 @@ class DefectEntry(MSONable):
              "defect": self.defect.as_dict(),
              "uncorrected_energy": self.uncorrected_energy,
              "corrections": self.corrections,
-             "parameters": jsanitize(self.parameters, strict=True),
+             "parameters": jsanitize(self.parameters, strict=True, allow_bson=True),
              "entry_id": self.entry_id,
              "task_id": self.task_id}
         return d
