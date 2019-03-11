@@ -201,7 +201,7 @@ class Substitution(Defect):
     @lru_cache(1)
     def defect_composition(self):
         poss_deflist = sorted(
-            self.bulk_structure.get_sites_in_sphere(self.site.coords, 2, include_index=True), key=lambda x: x[1])
+            self.bulk_structure.get_sites_in_sphere(self.site.coords, 0.1, include_index=True), key=lambda x: x[1])
         defindex = poss_deflist[0][2]
 
         temp_comp = self.bulk_structure.composition.as_dict()
@@ -234,7 +234,7 @@ class Substitution(Defect):
         defect_site = struct_for_defect_site[0]
 
         poss_deflist = sorted(
-            defect_structure.get_sites_in_sphere(defect_site.coords, 2, include_index=True), key=lambda x: x[1])
+            defect_structure.get_sites_in_sphere(defect_site.coords, 0.1, include_index=True), key=lambda x: x[1])
         defindex = poss_deflist[0][2]
 
         subsite = defect_structure.pop(defindex)
@@ -267,7 +267,7 @@ class Substitution(Defect):
         Returns a name for this defect
         """
         poss_deflist = sorted(
-            self.bulk_structure.get_sites_in_sphere(self.site.coords, 2, include_index=True), key=lambda x: x[1])
+            self.bulk_structure.get_sites_in_sphere(self.site.coords, 0.1, include_index=True), key=lambda x: x[1])
         defindex = poss_deflist[0][2]
         return "Sub_{}_on_{}_mult{}".format(self.site.specie, self.bulk_structure[defindex].specie, self.multiplicity)
 

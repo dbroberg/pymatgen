@@ -835,7 +835,7 @@ class BandEdgeShiftingCorrection(DefectCorrection):
         entry.parameters["bandshift_meta"] = dict(self.metadata)
 
         return {
-            "bandedgeshifting_correction": vbm_shift_correction,
+            "bandedgeshifting_correction": vbm_shift_correction
         }
 
 
