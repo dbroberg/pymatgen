@@ -1037,107 +1037,43 @@ class LevelShiftCorrection(DefectCorrection):
                                        "elec_cbm_shift_correction": elec_cbm_shift_correction
                                        } )
 
-# import os
-#
-# def consider_deleting( p):
-#     if ('.tar.gz' in p) or ('vasprun.xml' in p):
-#         print('not deleting ', p)
-#         return
-#     else:
-#         print('removing ', p)
-#         # os.remove( p)
-#         return
-#
-# reconsiderpat = []
-# for f in os.listdir('.'):
-#     print(f)
-#     if not os.path.isdir( f):
-#         continue
-#     else:
-#         for f1 in os.listdir( f):
-#             pat1 = os.path.join( f, f1)
-#             if not os.path.isdir( pat1):
-#                 consider_deleting(pat1)
-#             else:
-#                 for f2 in os.listdir(pat1):
-#                     pat2 = os.path.join(pat1, f2)
-#                     if not os.path.isdir(pat2):
-#                         consider_deleting(pat2)
-#                     else:
-#                         for f3 in os.listdir(pat2):
-#                             pat3 = os.path.join(pat2, f3)
-#                             if not os.path.isdir(pat3):
-#                                 consider_deleting(pat3)
-#                             else:
-#                                 for f4 in os.listdir(pat3):
-#                                     pat4 = os.path.join(pat3, f4)
-#                                     if not os.path.isdir(pat4):
-#                                         consider_deleting(pat4)
-#                                     else:
-#                                         for f5 in os.listdir(pat4):
-#                                             pat5 = os.path.join(pat4, f5)
-#                                             if not os.path.isdir(pat5):
-#                                                 consider_deleting(pat5)
-#                                             else:
-#                                                 for f6 in os.listdir(pat5):
-#                                                     pat6 = os.path.join(pat5, f6)
-#                                                     if not os.path.isdir(pat6):
-#                                                         consider_deleting(pat6)
-#                                                     else:
-#                                                         for f7 in os.listdir(pat6):
-#                                                             pat7 = os.path.join(pat6, f7)
-#                                                             if not os.path.isdir(pat7):
-#                                                                 consider_deleting(pat7)
-#                                                             else:
-#                                                                 for f8 in os.listdir(pat7):
-#                                                                     pat8 = os.path.join(pat7, f8)
-#                                                                     if not os.path.isdir(pat8):
-#                                                                         consider_deleting(pat8)
-#                                                                     else:
-#                                                                         for f9 in os.listdir(pat8):
-#                                                                             pat9 = os.path.join(pat8, f9)
-#                                                                             if not os.path.isdir(pat9):
-#                                                                                 consider_deleting(pat9)
-#                                                                             else:
-#                                                                                 reconsiderpat.append( pat9)
-#
-# print('Finished. Consider following paths:',reconsiderpat)
-
         if corr_type == 'ii':
-            print("Running type ii level shift correction (always do Pawpyseed):")
+            # print("Running type ii level shift correction (always do Pawpyseed):")
             tot_corr = 0.
             for bandind in occupied_KS_deep_states: #loop over deep (non shallow state) indices
                 vdict = pawpy_band_proj_md[bandind]
-                print("\t{}: eigen (rel to vbm) = {}, occu = {}, corr = {}".format( bandind, vdict["wgted_eigen"]-shifted_vbm,
-                                                                                    vdict["tot_occu"],  vdict["shift_corr"]))
+                # print("\t{}: eigen (rel to vbm) = {}, occu = {}, corr = {}".format( bandind, vdict["wgted_eigen"]-shifted_vbm,
+                #                                                                     vdict["tot_occu"],  vdict["shift_corr"]))
                 tot_corr += vdict["shift_corr"]
 
-            print("\nFinal Pawpyseed correction = {}".format( tot_corr))
+            # print("\nFinal Pawpyseed correction = {}".format( tot_corr))
 
             self.metadata.update( {'pawpy_band_proj_md': pawpy_band_proj_md.copy()})
             total_shift_corr.update( { "pawpyseed_always_KS_shift": tot_corr})
 
         elif corr_type == 'iii':
-            print("Running type iii level shift correction (only do Pawpyseed when not detected as localized):")
+            # print("Running type iii level shift correction (only do Pawpyseed when not detected as localized):")
             tot_corr = 0.
             for bandind in occupied_KS_deep_states:
                 vdict = pawpy_band_proj_md[bandind]
-                print("\t{}: eigen (rel to vbm) = {}, occu = {}, corr = {}".format( bandind, vdict["wgted_eigen"]-shifted_vbm,
-                                                                                    vdict["tot_occu"],  vdict["shift_corr"]))
-                if bandind in localized_band_indices:
-                    print("\tLOCALIZED  LEVEL! will not move.")
-                else:
+                # print("\t{}: eigen (rel to vbm) = {}, occu = {}, corr = {}".format( bandind, vdict["wgted_eigen"]-shifted_vbm,
+                #                                                                     vdict["tot_occu"],  vdict["shift_corr"]))
+                # if bandind in localized_band_indices:
+                #     print("\tLOCALIZED  LEVEL! will not move.")
+                # else:
+                #     tot_corr += vdict["shift_corr"]
+                if bandind not in localized_band_indices:
                     tot_corr += vdict["shift_corr"]
 
-            print("\nFinal Pawpyseed correction = {}".format( tot_corr))
+            # print("\nFinal Pawpyseed correction = {}".format( tot_corr))
 
             self.metadata.update( {'pawpy_band_proj_md': pawpy_band_proj_md.copy(),
                                    'localized_levels': localized_band_indices[:]})
             total_shift_corr.update( { "pawpyseed_nonlocal_KS_shift": tot_corr})
 
         elif corr_type == 'iv':
-            print("Running type iv level shift correction (if non-localized levels are not occupied, then try to find localized level "
-                  "for it; if this isnt doable then do Pawpyseed):")
+            # print("Running type iv level shift correction (if non-localized levels are not occupied, then try to find localized level "
+            #       "for it; if this isnt doable then do Pawpyseed):")
             # first create wgt energy eigen value of all localized levels...
             wgt_avg_eigen_for_each_local_band = {}
             for bandind, eig_occu_list in local_band_energy_dict.items():
@@ -1161,9 +1097,9 @@ class LevelShiftCorrection(DefectCorrection):
                 if bandind in track_localized_mapping.keys():
                     smart_shift_md['track_for_corr'].update( {bandind: {'type': 'localized', 'corr': 0.}})
                     del track_localized_mapping[bandind] # dont want to recount this level later
-                    print("\t{} ({} above vbm) is localized! No correction needed.".format( bandind, eigval))
+                    # print("\t{} ({} above vbm) is localized! No correction needed.".format( bandind, eigval))
                 else:
-                    print("\t{} ({} above vbm) needs shifting!".format( bandind, eigval))
+                    # print("\t{} ({} above vbm) needs shifting!".format( bandind, eigval))
                     needs_shifting.append( bandind)
 
             find_smallest_shifts = []
@@ -1179,15 +1115,15 @@ class LevelShiftCorrection(DefectCorrection):
                     this_corr = pawpy_band_proj_md[bandind]["shift_corr"]
                     smart_shift_md['track_for_corr'].update( {bandind: {'type': 'pawpyseed', 'corr': this_corr}})
                     tot_corr += this_corr
-                    print("\t{} could not be matched to localized level. Using pawpyseed.".format( bandind))
+                    # print("\t{} could not be matched to localized level. Using pawpyseed.".format( bandind))
                 else:
                     shifting_to = pawpy_band_proj_md[tb]['wgted_eigen'] - pawpy_band_proj_md[bandind]['wgted_eigen']
                     occu = pawpy_band_proj_md[bandind]['tot_occu']
                     this_corr = shifting_to * occu
                     smart_shift_md['track_for_corr'].update( {bandind: {'type': 'shift_to_{}'.format( tb),
                                                                         'corr': this_corr}})
-                    print("\t{} matched to localized level {} away. Using this for shift.".format( bandind,
-                                                                                                   round(pawpy_band_proj_md[tb]['wgted_eigen'],2)))
+                    # print("\t{} matched to localized level {} away. Using this for shift.".format( bandind,
+                    #                                                                                round(pawpy_band_proj_md[tb]['wgted_eigen'],2)))
 
             #if ran out of localized levels, run through and confirm that all possible ks states matched
             for bandind in all_possible_KS_defect_states:
@@ -1200,7 +1136,7 @@ class LevelShiftCorrection(DefectCorrection):
             if len( smart_shift_md['track_for_corr'].keys()) != len( all_possible_KS_defect_states):
                 raise ValueError("Something went wrong with level matching routine?")
 
-            print("\nFinal Smart KS shift correction = {}".format( tot_corr))
+            # print("\nFinal Smart KS shift correction = {}".format( tot_corr))
 
             self.metadata.update( {'pawpy_band_proj_md': pawpy_band_proj_md.copy(),
                                    'smart_shift_md': smart_shift_md.copy(),
