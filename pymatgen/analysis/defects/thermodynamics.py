@@ -467,6 +467,17 @@ class DefectPhaseDiagram(MSONable):
         Returns:
             Fermi energy
         """
+        #first check if one of defects is entirely negative in formation energy
+        for defnom, deflist in self.stable_entries.items():
+            for defect in deflist:
+                vbm_formen = defect.formation_energy(chemical_potentials = chemical_potentials,
+                                                    fermi_level=self.vbm )
+                cbm_formen = defect.formation_energy(chemical_potentials = chemical_potentials,
+                                                    fermi_level=self.vbm + self.band_gap)
+                if vbm_formen < 0. and cbm_formen < 0.:
+                    logger.error("Cannot solve for fermi level because {} "
+                                 "has negative formation energies for entire gap".format( defnom))
+                    return None
 
         fdos = FermiDos(bulk_dos, bandgap=self.band_gap)
 
