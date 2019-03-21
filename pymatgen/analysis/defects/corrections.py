@@ -7,6 +7,7 @@ import numpy as np
 import scipy
 import math
 from scipy import stats
+from pymatgen.core import Structure
 from pymatgen.analysis.defects.core import DefectCorrection
 from pymatgen.analysis.defects.utils import ang_to_bohr, hart_to_ev, eV_to_k, \
     generate_reciprocal_vectors_squared, QModel, converge, tune_for_gamma, \
@@ -850,9 +851,7 @@ class LevelShiftCorrection(DefectCorrection):
         'iii' = If KS level is localized then dont shift it, otherwise do (ii)
         'iv' = If localized level is found in host and there are occupied states
                     near band edges (like iA) then shift to that level. Otherwise shift 100% with band edges
-        TODO: 'v' = If TL exists then move it by amount equal to the KS level closest to it.
-                Could also not shift it if wf analyzer finds it to be localized
-                (this requires knowing TL levels...should be a dpd correction?)
+        'v' = Apply Pawpyseed shift to any midgap states based on Procar percentage on nearest neighbors
 
     Requires some parameters in the DefectEntry to properly function:
         vbm
@@ -999,6 +998,7 @@ class LevelShiftCorrection(DefectCorrection):
 
             if pawpy_band_proj is None:
                 # a FAKE pawpy parser
+                print("WARNING: using fake pawpybandproj...")
                 if wgt_avg_eigen <= shifted_vbm + entry.parameters['gap'] / 2.:
                     pawpy_band_proj = [1., 0.]
                 else:
@@ -1019,8 +1019,8 @@ class LevelShiftCorrection(DefectCorrection):
         if AB_type not in ["a", "b"]:
             corr_type = shift_approach
         elif AB_type == 'a':
-            if corr_type == 'iv':
-                raise ValueError("SHOULD NOT include free carrier shifts at edge?")
+            # if corr_type in ['iv', 'v']:
+            #     raise ValueError("SHOULD NOT include free carrier shifts at edge?")
             # occu_acceptor_shift = num_occupied_acceptor * vbmshift
             elec_cbm_shift_correction = num_elec_cbm * cbmshift
             total_shift_corr.update( {
@@ -1029,8 +1029,8 @@ class LevelShiftCorrection(DefectCorrection):
                                        })
             self.metadata.update( {'num_occupied_acceptor': num_occupied_acceptor})
         elif AB_type == 'b':
-            if corr_type == 'iv':
-                raise ValueError("SHOULD NOT include free carrier shifts at edge?")
+            # if corr_type in ['iv', 'v']:
+            #     raise ValueError("SHOULD NOT include free carrier shifts at edge?")
             hole_vbm_shift_correction = -1. * num_hole_vbm * vbmshift # negative sign because these are holes
             elec_cbm_shift_correction = num_elec_cbm * cbmshift
             total_shift_corr.update( { "hole_vbm_shift_correction": hole_vbm_shift_correction,
@@ -1143,6 +1143,63 @@ class LevelShiftCorrection(DefectCorrection):
                                    'wgt_avg_eigen_for_each_local_band': wgt_avg_eigen_for_each_local_band.copy()})
 
             total_shift_corr.update( { "smart_KS_shift": tot_corr})
+
+        elif corr_type == 'v':
+            """
+            i) Figure out a radius which is half way between first and second nearest neighbors 
+            to defect (to within some tolerance)
+            """
+            bs = entry.parameters['bulk_sc_structure']
+            if isinstance(bs, dict):
+                bs = Structure.from_dict(bs)
+            index = entry.parameters['defect_index_sc_coords']
+            def_site = bs.sites[int(index)]
+            vals = [[v[1], v[2]] for v in bs.get_neighbors( def_site, 5., include_index=True)]
+            vals.sort()
+            #get 1nn and 2nn distances (with 0.1 tolerance)
+            range_nn = [vals[0][0]]
+            for dist,_ in vals:
+                if abs(dist - range_nn[0]) > 0.1 and len(range_nn) == 1:
+                    range_nn.append( dist)
+            halfway_1nn_2nn_rad = np.mean( range_nn) #radius is half way between two
+            defect_site_indices_1nn = [] #list of defect structure site indices to consider in procar analysis
+            bi_to_di_site_map = {int(bi): int(di) for bi,di in entry.parameters['site_matching_indices']}
+            for dist, bindex in vals:
+                if dist < halfway_1nn_2nn_rad:
+                    defect_site_indices_1nn.append( bi_to_di_site_map[int(bindex)])
+
+            """
+            ii) From Procar, figure out what fraction of the single particle level exists 
+            on each atomic site within that radius
+            """
+            local_multiply_dict = {} #key is band index, value is multiplier = (1 - local percentage on nns)
+            spd = entry.parameters['defect_ks_delocal_data']['stored_procar_dat']
+            for bandind in all_possible_KS_defect_states:
+                tot_procar_occu = 0.
+                nn_procar_occu = 0.
+                for spinind in spd.keys():
+                    for kptdict in spd[spinind]:
+                        for site_ind, vallist in enumerate(kptdict[str(bandind)]['rad_dat']):
+                            dist, occu = vallist
+                            tot_procar_occu += occu
+                            if dist < halfway_1nn_2nn_rad:
+                                nn_procar_occu += occu
+                local_multiply_dict[bandind] = (1- nn_procar_occu/tot_procar_occu)
+                # print("{} has perc = {}".format(bandind, nn_procar_occu/tot_procar_occu))
+
+            """
+            iii) multiply the pawpyseed shift for that single particle level by (1 - the fraction from (ii) )
+            """
+            tot_corr = 0.
+            for bandind in all_possible_KS_defect_states:
+                tot_corr += local_multiply_dict[bandind] * pawpy_band_proj_md[bandind]['shift_corr']
+
+            self.metadata.update( {'pawpy_band_proj_md': pawpy_band_proj_md.copy(),
+                                   'local_multiply_dict': local_multiply_dict.copy()})
+
+            total_shift_corr.update( { "nn_adjusted_KS_shift": tot_corr})
+
+
 
         elif corr_type != 'i':
             raise ValueError('Shift_approach = {} not recognized...'.format( shift_approach))
