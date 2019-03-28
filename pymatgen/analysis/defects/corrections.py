@@ -8,7 +8,7 @@ import scipy
 import math
 from scipy import stats
 from pymatgen.core import Structure
-from pymatgen.analysis.defects.core import DefectCorrection
+from pymatgen.analysis.defects.core import DefectCorrection, Interstitial
 from pymatgen.analysis.defects.utils import ang_to_bohr, hart_to_ev, eV_to_k, \
     generate_reciprocal_vectors_squared, QModel, converge, tune_for_gamma, \
     generate_R_and_G_vecs, kumagai_to_V
@@ -1149,7 +1149,10 @@ class LevelShiftCorrection(DefectCorrection):
             i) Figure out a radius which is half way between first and second nearest neighbors 
             to defect (to within some tolerance)
             """
-            bs = entry.parameters['bulk_sc_structure']
+            if isinstance(entry.defect, Interstitial): #need to get defect site. If interstitial, it doesnt exist in bulk
+                bs = entry.parameters['initial_defect_structure']
+            else:
+                bs = entry.parameters['bulk_sc_structure']
             if isinstance(bs, dict):
                 bs = Structure.from_dict(bs)
             index = entry.parameters['defect_index_sc_coords']
@@ -1166,7 +1169,10 @@ class LevelShiftCorrection(DefectCorrection):
             bi_to_di_site_map = {int(bi): int(di) for bi,di in entry.parameters['site_matching_indices']}
             for dist, bindex in vals:
                 if dist < halfway_1nn_2nn_rad:
-                    defect_site_indices_1nn.append( bi_to_di_site_map[int(bindex)])
+                    if isinstance(entry.defect, Interstitial):
+                        defect_site_indices_1nn.append( int(bindex))
+                    else:
+                        defect_site_indices_1nn.append( bi_to_di_site_map[int(bindex)])
 
             """
             ii) From Procar, figure out what fraction of the single particle level exists 
@@ -1175,16 +1181,20 @@ class LevelShiftCorrection(DefectCorrection):
             local_multiply_dict = {} #key is band index, value is multiplier = (1 - local percentage on nns)
             spd = entry.parameters['defect_ks_delocal_data']['stored_procar_dat']
             for bandind in all_possible_KS_defect_states:
-                tot_procar_occu = 0.
-                nn_procar_occu = 0.
-                for spinind in spd.keys():
-                    for kptdict in spd[spinind]:
-                        for site_ind, vallist in enumerate(kptdict[str(bandind)]['rad_dat']):
-                            dist, occu = vallist
-                            tot_procar_occu += occu
-                            if dist < halfway_1nn_2nn_rad:
-                                nn_procar_occu += occu
-                local_multiply_dict[bandind] = (1- nn_procar_occu/tot_procar_occu)
+                try:
+                    tot_procar_occu = 0.
+                    nn_procar_occu = 0.
+                    for spinind in spd.keys():
+                        for kptdict in spd[spinind]:
+                            for site_ind, vallist in enumerate(kptdict[str(bandind)]['rad_dat']):
+                                dist, occu = vallist
+                                tot_procar_occu += occu
+                                if dist < halfway_1nn_2nn_rad:
+                                    nn_procar_occu += occu
+                    local_multiply_dict[bandind] = (1- nn_procar_occu/tot_procar_occu)
+                except:
+                    #if try fails then likely because bandindex is not in procar set... which means we wont use it
+                    local_multiply_dict[bandind] = 0.
                 # print("{} has perc = {}".format(bandind, nn_procar_occu/tot_procar_occu))
 
             """
