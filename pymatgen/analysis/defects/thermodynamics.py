@@ -11,8 +11,9 @@ from itertools import chain
 
 from pymatgen.analysis.structure_matcher import PointDefectComparator
 from pymatgen.electronic_structure.dos import FermiDos
-from pymatgen.analysis.defects.core import DefectEntry
+from pymatgen.analysis.defects.core import DefectEntry, Vacancy, Substitution, Interstitial
 from pymatgen.analysis.structure_matcher import PointDefectComparator
+from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
 
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
@@ -425,14 +426,14 @@ class DefectPhaseDiagram(MSONable):
             i.e. no negative defect crossing before +/- 3 of band edges
             OR defect formation energies are entirely zero)
         """
-        min_fl_range = -3.
-        max_fl_range = self.band_gap + 3.
+        # min_fl_range = -3.
+        # max_fl_range = self.band_gap + 3.
+        min_fl_range = -20.
+        max_fl_range = self.band_gap + 20.
 
         lower_lim = None
         upper_lim = None
         for def_entry in self.all_stable_entries:
-            if not def_entry.charge:
-                continue
             min_fl_formen = def_entry.formation_energy(chemical_potentials = chemical_potentials,
                                                     fermi_level=min_fl_range)
             max_fl_formen = def_entry.formation_energy(chemical_potentials = chemical_potentials,
@@ -441,6 +442,7 @@ class DefectPhaseDiagram(MSONable):
             if min_fl_formen < 0. and max_fl_formen < 0.:
                 print("ERROR: Formation energy is negative through entire gap for entry {} q={}."
                       " Cannot return dopability limits.".format( def_entry.name, def_entry.charge))
+                #TODO -> also screen defects with hull less than zero
                 return None, None
             elif np.sign( min_fl_formen) != np.sign( max_fl_formen):
                 x_crossing = min_fl_range - (min_fl_formen / def_entry.charge)
@@ -470,16 +472,25 @@ class DefectPhaseDiagram(MSONable):
         #first check if one of defects is entirely negative in formation energy
         for defnom, deflist in self.stable_entries.items():
             for defect in deflist:
-                vbm_formen = defect.formation_energy(chemical_potentials = chemical_potentials,
-                                                    fermi_level=self.vbm )
-                cbm_formen = defect.formation_energy(chemical_potentials = chemical_potentials,
-                                                    fermi_level=self.vbm + self.band_gap)
+                if "vbm" in defect.parameters:
+                    vbm_formen = defect.formation_energy(chemical_potentials = chemical_potentials,
+                                                        fermi_level=0. )
+                    cbm_formen = defect.formation_energy(chemical_potentials = chemical_potentials,
+                                                        fermi_level=self.band_gap)
+                else:
+                    vbm_formen = defect.formation_energy(chemical_potentials = chemical_potentials,
+                                                        fermi_level=self.vbm )
+                    cbm_formen = defect.formation_energy(chemical_potentials = chemical_potentials,
+                                                        fermi_level=self.vbm + self.band_gap)
                 if vbm_formen < 0. and cbm_formen < 0.:
                     logger.error("Cannot solve for fermi level because {} "
                                  "has negative formation energies for entire gap".format( defnom))
                     return None
 
-        fdos = FermiDos(bulk_dos, bandgap=self.band_gap)
+        # fdos = FermiDos(bulk_dos, bandgap=self.band_gap)
+        # fdos_vbm = fdos.energies[fdos.idx_vbm]
+        fdos = FermiDos(bulk_dos, vbm=self.vbm, cbm=self.vbm + self.band_gap)
+        fdos_vbm = self.vbm
 
         def _get_total_q(ef):
 
@@ -488,7 +499,7 @@ class DefectPhaseDiagram(MSONable):
                 for d in self.defect_concentrations(
                     chemical_potentials=chemical_potentials, temperature=temperature, fermi_level=ef)
             ])
-            qd_tot += fdos.get_doping(fermi=ef + self.vbm, T=temperature)
+            qd_tot += fdos.get_doping(fermi=ef + fdos_vbm, T=temperature)
             return qd_tot
 
         return bisect(_get_total_q, -1., self.band_gap + 1.)
@@ -633,7 +644,8 @@ class DefectPhaseDiagram(MSONable):
             legends_txt.append( base + sub_str)
 
         if not lg_position:
-            plt.legend(legends_txt, fontsize=lg_fontsize*width, loc=0)
+            # plt.legend(legends_txt, fontsize=lg_fontsize*width, loc=0)
+            plt.legend(legends_txt, fontsize=lg_fontsize*width, loc=2)
         else:
             plt.legend(legends_txt, fontsize=lg_fontsize*width, ncol=3,
                        loc='lower center', bbox_to_anchor=lg_position)
@@ -658,3 +670,90 @@ class DefectPhaseDiagram(MSONable):
             plt.savefig(str(title) + "FreyplnravgPlot.pdf")
         else:
             return plt
+
+    def get_stoichiometry(self, chemical_potentials, temperature, fermi_level, force_intrinsic = False, high_prec = True):
+        """
+        Get the stoichiometry for the set of defects for a given set of chemical potentials, temp and fermi level
+
+        :param chemical_potentials:
+        :param temperature:
+        :param fermi_level:
+        :param force_intrinsic (bool): Only allow intrinsic defects to be considered for stoichiometry
+        :param high_prec (bool): Allow for high precision difference tracking
+        :return:
+        """
+
+        from pymatgen.core import Element
+        if high_prec:
+            import decimal
+            dec = decimal.Decimal
+        else:
+            dec = float
+
+        # perfect stoichiometry
+        bs = self.entries[0].bulk_structure
+        vol = dec(bs.volume * 1e-24)  # cm^3
+        comp = bs.composition
+        this_stoich = {k: dec(v) / vol for k, v in comp.items()}
+
+        # note that this dict needs to be summed over and divided to get a readable stoichiometry
+        orig_norm_val = dec(np.sum(list(this_stoich.values())))
+        perf_stoich = {k: v / orig_norm_val for k, v in this_stoich.items()}
+        print("Perfect stoichiometry is: {}".format(perf_stoich))
+
+        for defentry in self.all_stable_entries:
+            #make sure this isnt outside range of thermodynamics
+            formen = defentry.formation_energy(chemical_potentials=chemical_potentials,
+                                                 fermi_level=fermi_level)
+            if formen < 0. :
+                logger.error("Cannot solve for stoichiometry because {} "
+                             "has negative formation energies at this fermi level".format(defentry.name, defentry.charge))
+                return None
+
+
+            conc = dec(defentry.defect_concentration(chemical_potentials=chemical_potentials,
+                                                     temperature=temperature, fermi_level=fermi_level))
+
+            defect_elt = defentry.site.specie
+
+            if defect_elt not in this_stoich:
+                if not force_intrinsic:
+                    this_stoich[defect_elt] = dec(0.)
+                else:
+                    continue
+
+            if conc > len(bs) / vol:
+                logger.error("{} has {} as concentration, total concentration of sites in bulk_structure "
+                                 "is {}".format(defentry.name, conc, len(bs) / vol))
+                return None
+            #     elif conc < 1.:
+            #         continue
+            #     else:
+            #         print("{} {} has concentration: \t{}".format( defentry.name, defentry.charge, conc))
+
+            if isinstance(defentry.defect, Vacancy):
+                this_stoich[defect_elt] -= conc
+            elif isinstance(defentry.defect, Substitution):
+                site_elt = Element(defentry.name.split("_")[3])
+                this_stoich[defect_elt] += conc
+                this_stoich[site_elt] -= conc
+            elif isinstance(defentry.defect, Interstitial):
+                this_stoich[defect_elt] += conc
+
+        out_norm_val = dec(np.sum(list(this_stoich.values())))
+        out_stoich = {k: v / out_norm_val for k, v in this_stoich.items()}
+        print("\nResulting stoichiometry is: {}".format(out_stoich))
+
+        # get high precision differences
+        for k, v in out_stoich.items():
+            if k not in perf_stoich:
+                perf_val = dec(0.)
+            else:
+                perf_val = perf_stoich[k]
+            diff_val = v - perf_val
+            if diff_val:
+                print("{} had stoich diff = {}".format(k, diff_val))
+
+        out_stoich = {Element(elt): v for elt,v in out_stoich.items()}
+        return out_stoich
+

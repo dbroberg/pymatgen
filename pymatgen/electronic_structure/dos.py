@@ -431,7 +431,7 @@ class FermiDos(Dos):
             electronic band gap matches this value.
     """
 
-    def __init__(self, dos, structure=None, nelecs=None, bandgap=None):
+    def __init__(self, dos, structure=None, nelecs=None, bandgap=None, vbm=None, cbm=None):
         super(FermiDos, self).__init__(
             dos.efermi, energies=dos.energies,
             densities={k: np.array(d) for k, d in dos.densities.items()})
@@ -459,8 +459,27 @@ class FermiDos(Dos):
             else:
                 eref = (evbm + ecbm) / 2.0
             idx_fermi = np.argmin(abs(self.energies - eref))
-            self.energies[:idx_fermi] -= (bandgap - (ecbm - evbm)) / 2.0
-            self.energies[idx_fermi:] += (bandgap - (ecbm - evbm)) / 2.0
+            # self.energies[:idx_fermi] -= (bandgap - (ecbm - evbm)) / 2.0
+            # self.energies[idx_fermi:] += (bandgap - (ecbm - evbm)) / 2.0
+            scissor = (bandgap - (ecbm - evbm)) / 2.0 #TODO: make this more pythonic but working (above was not working)
+            for en_ind in range(len(self.energies)):
+                if en_ind <= idx_fermi:
+                    self.energies[en_ind] -= scissor
+                elif en_ind > idx_fermi:
+                    self.energies[en_ind] += scissor
+        if vbm and cbm:
+            #shift according to the band edges of interest
+            self.idx_vbm = np.argmin(abs(self.energies - vbm))
+            self.idx_cbm = np.argmin(abs(self.energies - cbm))
+            vbm_shift = vbm - evbm
+            cbm_shift = cbm - ecbm
+            eref = (vbm + cbm) / 2.0
+            for en_ind, energy in enumerate(self.energies):
+                if energy <= eref:
+                    self.energies[en_ind] += vbm_shift
+                else:
+                    self.energies[en_ind] += cbm_shift
+
 
     def get_doping(self, fermi, T):
         """
