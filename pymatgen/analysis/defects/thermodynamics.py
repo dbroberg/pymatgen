@@ -463,8 +463,6 @@ class DefectPhaseDiagram(MSONable):
 
         return bisect(_get_total_q, -1., self.band_gap + 1.)
 
-        return
-
     def get_dopability_limits(self, chemical_potentials):
         """
         Find Dopability limits for a given chemical potential.
