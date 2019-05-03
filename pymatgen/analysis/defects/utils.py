@@ -1388,7 +1388,7 @@ def generate_R_and_G_vecs(gamma, prec_set, lattice, epsilon):
                             nmr = math.erfc(gamma * sqrt_loc_res)
                             real_summation_values[real_cut_ind] += nmr / sqrt_loc_res
 
-    real_summation_values = np.array(real_summation_values)
+    real_summation_values = np.array( real_summation_values)
     real_summation_values /= (4 * np.pi * rd_epsilon)
 
     return recip_set, recip_summation_values, real_set, real_summation_values

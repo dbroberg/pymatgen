@@ -337,7 +337,7 @@ class KumagaiCorrection(DefectCorrection):
     (doi: 10.1103/PhysRevB.89.195205) as well as Freysoldt's original
     paper (doi: 10.1103/PhysRevLett.102.016402)
 
-    NOTE that equations 8 and 9 from Kumagai et al. reverence are divided by (4 pi) to get SI units
+    NOTE that equations 8 and 9 from Kumagai et al. reference are divided by (4 pi) to get SI units
     """
 
     def __init__(self,
@@ -623,7 +623,6 @@ class KumagaiCorrection(DefectCorrection):
         """
         Plots the AtomicSite electrostatic potential against the Long range and short range models
         from Kumagai and Oba (doi: 10.1103/PhysRevB.89.195205)
-
         """
         if "pot_plot_data" not in self.metadata.keys():
             raise ValueError("Cannot plot potential alignment before running correction!")
@@ -755,7 +754,7 @@ class BandFillingCorrection(DefectCorrection):
 
         Note that the total free holes and electrons may also be used for a "shallow donor/acceptor"
                correction with specified band shifts:
-               +num_elec_cbm * Delta E_CBM (or -num_hole_vbm * Delta E_VBM)
+                +num_elec_cbm * Delta E_CBM (or -num_hole_vbm * Delta E_VBM)
         """
         bf_corr = 0.
 
@@ -797,6 +796,9 @@ class BandEdgeShiftingCorrection(DefectCorrection):
     """
 
     def __init__(self):
+        """
+        Initializes the BandEdgeShiftingCorrection class
+        """
         self.metadata = {
             "vbmshift": 0.,
             "cbmshift": 0.,

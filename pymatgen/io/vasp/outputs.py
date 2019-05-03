@@ -3475,26 +3475,6 @@ class Procar:
         return {spin: np.sum(d[:, :, atom_index, orbital_index] * self.weights[:, None])
                 for spin, d in self.data.items()}
 
-    def perc_contained_in_radius_from_site(self, structure, site, radius,
-                                           spinkey, kptindex, bandindex, return_rad_dat=True):
-        if spinkey not in self.data.keys():
-            raise ValueError("{} not in {}".format(spinkey, self.data.keys()))
-
-        tot_occu = 0.
-        in_radius_occu = 0.
-        rad_dat = []
-        for listsite, prodat in zip(structure, self.data[spinkey][kptindex][bandindex]):
-            dist, jimage = site.distance_and_image_from_frac_coords(listsite.frac_coords)
-            tot_occu += np.sum(prodat)
-            rad_dat.append([dist, np.sum(prodat)])
-            if dist <= radius:
-                in_radius_occu += np.sum(prodat)
-
-        if return_rad_dat:
-            rad_dat.sort()
-            return in_radius_occu / tot_occu, rad_dat
-        else:
-            return in_radius_occu / tot_occu
 
 class Oszicar:
     """

@@ -135,8 +135,8 @@ class DefectsCorrectionsTest(PymatgenTest):
         parameters = {'bulk_atomic_site_averages': bulk_out.electrostatic_potential,
                       'defect_atomic_site_averages': defect_out.electrostatic_potential,
                       'site_matching_indices': [[ind, ind-1] for ind in range(len(bulk_struc))],
-                      'defect_frac_sc_coords': defect_frac_coords,
-                      'initial_defect_structure': defect_structure}
+                      'initial_defect_structure': defect_structure,
+                      'defect_frac_sc_coords': defect_frac_coords}
         dentry = DefectEntry( vac, 0., parameters=parameters)
         kc = KumagaiCorrection( epsilon)
         kcorr = kc.get_correction( dentry)
@@ -206,7 +206,7 @@ class DefectsCorrectionsTest(PymatgenTest):
         de = DefectEntry(vac, 0., corrections={}, parameters=params, entry_id=None)
 
         corr = bfc.get_correction(de)
-        self.assertAlmostEqual(corr['bandfilling'], 0.)
+        self.assertAlmostEqual(corr['bandfilling_correction'], 0.)
 
         #modify the eigenvalue list to have free holes
         hole_eigenvalues = {}
