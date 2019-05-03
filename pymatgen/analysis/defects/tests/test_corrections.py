@@ -254,7 +254,7 @@ class DefectsCorrectionsTest(PymatgenTest):
         de = DefectEntry(vac, 0., corrections={}, parameters=params, entry_id=None)
 
         corr = besc.get_correction(de)
-        self.assertEqual(corr['vbm_shift_correction'], 1.5)
+        self.assertEqual(corr['bandedgeshifting_correction'], 1.5)
 
 
 

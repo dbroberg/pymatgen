@@ -54,9 +54,6 @@ invang_to_ev = 3.80986
 kb = 8.6173324e-5  # eV / K
 kumagai_to_V = 1.809512739e2  # = Electron charge * 1e10 / VacuumPermittivity Constant
 
-#unit conversion for ewald sum equation conversion to V
-kumagai_to_V = 1.809512739e2  # = Electron charge * 1e10 / VacuumPermittivity Constant
-
 motif_cn_op = {}
 for cn, di in cn_opt_params.items():
     for mot, li in di.items():
@@ -1367,6 +1364,7 @@ def generate_R_and_G_vecs(gamma, prec_set, lattice, epsilon):
                         summand = math.exp(-Gdotdiel / (4 * (gamma**2))) / Gdotdiel
                         recip_summation_values[recip_cut_ind] += summand
 
+    recip_summation_values = np.array(recip_summation_values)
     recip_summation_values /= volume
 
     #generate real vector set (for each prec_set)
@@ -1390,6 +1388,7 @@ def generate_R_and_G_vecs(gamma, prec_set, lattice, epsilon):
                             nmr = math.erfc(gamma * sqrt_loc_res)
                             real_summation_values[real_cut_ind] += nmr / sqrt_loc_res
 
+    real_summation_values = np.array(real_summation_values)
     real_summation_values /= (4 * np.pi * rd_epsilon)
 
     return recip_set, recip_summation_values, real_set, real_summation_values

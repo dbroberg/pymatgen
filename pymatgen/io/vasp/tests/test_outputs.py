@@ -1309,6 +1309,33 @@ class WavecarTest(PymatgenTest):
         self.assertEqual(np.prod(c.data['total'].shape), np.prod(w.ng * 2))
         self.assertFalse(np.all(c.data['total'] > 0.))
 
+    def test_prob_density(self):
+        self.assertArrayEqual( list(self.w.prob_density(0, 6, 0).shape), [15, 15, 15])
+        self.assertAlmostEqual( self.w.prob_density( 0, 6, 1)[0][0][0], 8.08735719e-19)
+
+    def test_get_charge_center(self):
+        lat = Lattice( self.w.a)
+        site_guess = PeriodicSite( 'N', [0.33,0.66,0.25], lat, coords_are_cartesian=False)
+        chg_cent = self.w.get_charge_center(0, 4, 1, site_guess)
+        self.assertArrayAlmostEqual( chg_cent.frac_coords, [0.02345158, 0.97654842, 0.2678721])
+
+        chg_cent = self.w.get_charge_center(0, 6, 1, site_guess)
+        self.assertArrayAlmostEqual( chg_cent.frac_coords, [0.07509641, 0.93089229, 0.09778921])
+
+
+    def test_get_total_radial_distrib_from_coords(self):
+        # out = self.w.get_total_radial_distrib_from_coords(kpt_weights, band, spin, coords,
+        #                                      coords_are_cartesian=False, reduce_size=False,
+        #                                      find_charge_center = True)
+        pass
+
+    def test__reduce_rad_data(self):
+        # new_dat = self.w._reduce_rad_data(dat)
+        pass
+
+    def test_parse_defect_states(self):
+        # parse_defect_states( struct, guess_site, self.w, procar?)
+        pass
 
 class WavederTest(PymatgenTest):
     _multiprocess_shared_ = True
