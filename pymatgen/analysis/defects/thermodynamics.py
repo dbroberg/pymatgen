@@ -666,6 +666,6 @@ class DefectPhaseDiagram(MSONable):
             plt.title("{}".format(title), size=ax_fontsize*width)
 
         if saved:
-            plt.savefig(str(title) + "FreyplnravgPlot.pdf")
+            plt.savefig(str(title) + ".pdf")
         else:
             return plt
