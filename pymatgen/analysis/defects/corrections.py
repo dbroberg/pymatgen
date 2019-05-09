@@ -319,7 +319,7 @@ class FreysoldtCorrection(DefectCorrection):
         plt.ylim(-0.2 + ymin, 0.2 + ymax)
         plt.xlabel(r"distance along axis ($\AA$)", fontsize=15)
         plt.ylabel("Potential (V)", fontsize=15)
-        plt.legend(loc=9)
+        plt.legend(loc=0)
         plt.axhline(y=0, linewidth=0.2, color="black")
         plt.title(str(title) + " defect potential", fontsize=18)
         plt.xlim(0, max(x))
