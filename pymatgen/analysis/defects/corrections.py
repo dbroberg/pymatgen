@@ -11,8 +11,6 @@ from pymatgen.analysis.defects.utils import ang_to_bohr, hart_to_ev, eV_to_k, \
     generate_reciprocal_vectors_squared, QModel, converge, tune_for_gamma, \
     generate_R_and_G_vecs, kumagai_to_V
 
-import matplotlib.pyplot as plt
-
 __author__ = "Danny Broberg, Shyam Dwaraknath"
 __copyright__ = "Copyright 2018, The Materials Project"
 __version__ = "1.0"
@@ -292,6 +290,7 @@ class FreysoldtCorrection(DefectCorrection):
                 object. If True then saves plot as   str(title) + "FreyplnravgPlot.pdf"
 
         """
+        import matplotlib.pyplot as plt
         if not self.metadata["pot_plot_data"]:
             raise ValueError("Cannot plot potential alignment before running correction!")
 
@@ -622,6 +621,7 @@ class KumagaiCorrection(DefectCorrection):
         Plots the AtomicSite electrostatic potential against the Long range and short range models
         from Kumagai and Oba (doi: 10.1103/PhysRevB.89.195205)
         """
+        import matplotlib.pyplot as plt
         if "pot_plot_data" not in self.metadata.keys():
             raise ValueError("Cannot plot potential alignment before running correction!")
 
