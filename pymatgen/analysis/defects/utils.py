@@ -1393,3 +1393,136 @@ def generate_R_and_G_vecs(gamma, prec_set, lattice, epsilon):
 
     return recip_set, recip_summation_values, real_set, real_summation_values
 
+
+def parse_defect_states(structure, defect_site, wavecar, procar,
+                        sampling_radius = None):
+    """
+    This module parses Procar and Wavecar for defect localization.
+     Algorithm:
+        i) Find band indices of interest from wavecar data,
+            defined as a window of +/- 10 bands away from the fermi level
+        ii) Store eigenvalue data for each band
+        iii) If no sampling_radius is defined, then determined the ws-radius and use as sampling_radius
+        iii) Calculate percentage of single particle level contained within
+
+        procar percentage contained within sampling_radius
+        iv) For all bands which have caluclate wavecar percentage contained within radius
+            (with charge center as starting point)
+
+    Args:
+        structure (Structure):
+        defect_site (PeriodicSite):
+        wavecar (Wavecar):
+        procar (Procar):
+        sampling_radius (float):
+
+    Returns:
+         dictionary of defect metadata for localization
+    """
+    # find interesting bands
+    fermi_band_set = []
+    if wavecar.spin == 1:
+        for kpt_ind in range(wavecar.nk):
+            for band_ind in range(wavecar.nb):
+                if not wavecar.band_energy[kpt_ind][band_ind][2]:
+                    fermi_band_set.append(band_ind)
+                    break
+    elif wavecar.spin == 2:
+        for spin_ind in range(len(wavecar.band_energy)):
+            for kpt_ind in range(wavecar.nk):
+                for band_ind in range(wavecar.nb):
+                    if not wavecar.band_energy[spin_ind][kpt_ind][band_ind][2]:
+                        fermi_band_set.append(band_ind)
+                        break
+    fermi_band_set = list(set(fermi_band_set))
+    sample_bands = np.arange(min(fermi_band_set) - 10, max(fermi_band_set) + 11)
+    logger.info('sampling {} bands'.format(len(sample_bands)))
+
+     # store global energy data about these bands
+    store_eigen_dat = {spin_ind: {band_ind: [] for band_ind in sample_bands}
+                       for spin_ind in range(wavecar.spin)}
+    if wavecar.spin == 1:
+        for kpt_ind in range(wavecar.nk):
+            for band_ind in sample_bands:
+                occu = [wavecar.band_energy[kpt_ind][band_ind][0],
+                        wavecar.band_energy[kpt_ind][band_ind][2]]
+                store_eigen_dat[0][band_ind].append(occu)
+    elif wavecar.spin == 2:
+        for spin_ind in range(wavecar.spin):
+            for kpt_ind in range(wavecar.nk):
+                for band_ind in sample_bands:
+                    occu = [wavecar.band_energy[spin_ind][kpt_ind][band_ind][0],
+                            wavecar.band_energy[spin_ind][kpt_ind][band_ind][2]]
+                    store_eigen_dat[spin_ind][band_ind].append(occu)
+
+    if not sampling_radius:
+        # get ws radius
+        wz = structure.lattice.get_wigner_seitz_cell()
+        dist = []
+        for facet in wz:
+            midpt = np.mean(np.array(facet), axis=0)
+            dist.append(np.linalg.norm(midpt))
+        sampling_radius = min(dist)
+        logger.info('Sampling radius determined to be {}'.format(sampling_radius))
+
+     # check procar to see bands which may be of interest
+    followup_bands = []
+    stored_procar_dat = {}
+    for spinind, spinkey in enumerate(procar.data.keys()):
+        stored_procar_dat[spinind] = []
+        for kptindex in range(procar.nkpoints):
+            stored_procar_dat[spinind].append({})
+            for band_ind in sample_bands:
+                perc, rad_dat = procar.perc_contained_in_radius_from_site(structure, defect_site, sampling_radius,
+                                                                 spinkey, kptindex, band_ind)
+                stored_procar_dat[spinind][kptindex].update(
+                    {band_ind: {'perc': perc, 'rad_dat': rad_dat, 'eigen': store_eigen_dat[spinind][band_ind]}})
+
+     # now use weighting to find bands with 70% localization overall
+    for band_ind in sample_bands:
+        for spinind in range(wavecar.spin):
+            perc = 0.
+            for kwt, kptindex in zip(procar.weights, range(procar.nkpoints)):
+                perc += stored_procar_dat[spinind][kptindex][band_ind]['perc'] * kwt
+
+            if perc >= 0.7:
+                followup_bands.append(band_ind)
+
+    followup_bands = list(set(followup_bands))
+    followup_bands.sort()
+
+    # run wavecar analysis on follow up bands
+    followup_wf_parse_md = {}  # bandindex as key, spin as second key,
+    perc90_local = {spin: [] for spin in range(wavecar.spin)}
+    if len(followup_bands):
+        logger.info('found {} bands for follow up\n\t{}'.format(len(followup_bands), followup_bands))
+        for band_ind in followup_bands:
+            followup_wf_parse_md[band_ind] = {}
+            for spin in range(wavecar.spin):
+                print(band_ind, spin)
+                dat = wavecar.get_total_radial_distrib_from_coords(procar.weights, band_ind, spin, defect_site.coords,
+                                                             coords_are_cartesian=True, reduce_size=True)
+
+                # quick check if this is 90% localized within the sampling radius
+                x = dat['tot'][0]  # [ reduced_x, reduced_y, percentage_y]
+                y = dat['tot'][2]
+                cont90rad = None
+                for yind, yval in enumerate(y):
+                    if yval >= 0.9 and cont90rad is None:
+                        cont90rad = x[yind]
+
+                followup_wf_parse_md[band_ind][spin] = {'rad_dist_data': dat,
+                                                        'eigen': store_eigen_dat[spin][band_ind],
+                                                        'cont90rad': cont90rad}
+                if cont90rad <= sampling_radius:
+                    perc90_local[spin].append(band_ind)
+
+    else:
+        logger.info('found NO bands for follow up...')
+
+    defect_out = {'localized_band_indices': perc90_local,
+                  'stored_procar_dat': stored_procar_dat,
+                  'sampling_radius': sampling_radius,
+                  'followup_wf_parse': followup_wf_parse_md}
+
+    return defect_out

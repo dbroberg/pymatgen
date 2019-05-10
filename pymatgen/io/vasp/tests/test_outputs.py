@@ -1114,6 +1114,8 @@ class ProcarTest(PymatgenTest):
         p = Procar(filepath)
         self.assertAlmostEqual(p.phase_factors[Spin.up][0, 0, 0, 0], -0.13 + 0.199j)
 
+    def test_perc_contained_in_radius_from_site(self):
+        pass
 
 class XdatcarTest(PymatgenTest):
 
@@ -1316,6 +1318,17 @@ class WavecarTest(PymatgenTest):
         self.assertEqual(np.prod(c.data['total'].shape), np.prod(w.ng * 2))
         self.assertFalse(np.all(c.data['total'] > 0.))
 
+    def test_prob_density(self):
+        pass
+
+    def test_get_charge_center(self):
+        pass
+
+    def test_get_total_radial_distrib_from_coords(self):
+        pass
+
+    def test_reduce_rad_data(self):
+        pass
 
 class WavederTest(PymatgenTest):
     _multiprocess_shared_ = True
