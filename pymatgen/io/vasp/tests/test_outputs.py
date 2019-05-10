@@ -1270,6 +1270,8 @@ class ProcarTest(PymatgenTest):
         p = Procar(filepath)
         self.assertAlmostEqual(p.phase_factors[Spin.up][0, 0, 0, 0], -0.13 + 0.199j)
 
+    def test_perc_contained_in_radius_from_site(self):
+        pass
 
 class XdatcarTest(PymatgenTest):
 
@@ -1545,85 +1547,17 @@ class WavecarTest(PymatgenTest):
         self.assertEqual(np.prod(c.data['total'].shape), np.prod(w.ng * 2))
         self.assertFalse(np.all(c.data['total'] > 0.))
 
-        w = self.w_ncl
-        w.coeffs.append([np.ones((2, 100))])
-        c = w.get_parchg(poscar, -1, 0, phase=False, spinor=None)
-        self.assertTrue('total' in c.data)
-        self.assertTrue('diff' not in c.data)
-        self.assertEqual(np.prod(c.data['total'].shape), np.prod(w.ng * 2))
-        self.assertFalse(np.all(c.data['total'] > 0.))
+    def test_prob_density(self):
+        pass
 
-        c = w.get_parchg(poscar, -1, 0, phase=True, spinor=0)
-        self.assertTrue('total' in c.data)
-        self.assertTrue('diff' not in c.data)
-        self.assertEqual(np.prod(c.data['total'].shape), np.prod(w.ng * 2))
-        self.assertFalse(np.all(c.data['total'] > 0.))
+    def test_get_charge_center(self):
+        pass
 
-        w.coeffs[-1] = [np.zeros((2, 100))]
-        c = w.get_parchg(poscar, -1, 0, phase=False, spinor=1)
-        self.assertTrue('total' in c.data)
-        self.assertTrue('diff' not in c.data)
-        self.assertEqual(np.prod(c.data['total'].shape), np.prod(w.ng * 2))
-        self.assertTrue(np.allclose(c.data['total'], 0.))
+    def test_get_total_radial_distrib_from_coords(self):
+        pass
 
-    def test_write_unks(self):
-        unk_std = Unk.from_file(self.TEST_FILES_DIR / 'UNK.N2.std')
-        unk_ncl = Unk.from_file(self.TEST_FILES_DIR / 'UNK.H2.ncl')
-
-        with self.assertRaises(ValueError):
-            self.w.write_unks(self.TEST_FILES_DIR / 'UNK.N2.std')
-
-        # different grids
-        with ScratchDir('.'):
-            self.w.write_unks('./unk_dir')
-            self.assertEqual(len(list(Path('./unk_dir').glob('UNK*'))), 1)
-            unk = Unk.from_file('./unk_dir/UNK00001.1')
-            self.assertNotEqual(unk, unk_std)
-
-        # correct grid
-        self.w.ng = np.array([12, 12, 12])
-        with ScratchDir('.'):
-            self.w.write_unks('.')
-            unk = Unk.from_file('UNK00001.1')
-            self.assertEqual(unk, unk_std)
-
-        # ncl test
-        with ScratchDir('.'):
-            self.w_ncl.write_unks('.')
-            unk = Unk.from_file('UNK00001.NC')
-            self.assertEqual(unk, unk_ncl)
-
-
-class EigenvalTest(PymatgenTest):
-    _multiprocess_shared_ = True
-
-    def test_init(self):
-        eig = Eigenval(self.TEST_FILES_DIR / 'EIGENVAL.gz')
-        self.assertEqual(eig.ispin, 1)
-        self.assertEqual(eig.nkpt, len(eig.kpoints))
-        self.assertEqual(eig.nkpt, len(eig.kpoints_weights))
-        self.assertEqual(eig.nkpt, eig.eigenvalues[Spin.up].shape[0])
-        self.assertEqual(eig.nelect, 16)
-        self.assertEqual(eig.nbands, eig.eigenvalues[Spin.up].shape[1])
-        self.assertTrue(np.max(eig.eigenvalues[Spin.up]) > 0)
-        self.assertTrue(np.min(eig.eigenvalues[Spin.up]) < 0)
-
-    def test_ispin2(self):
-        eig = Eigenval(self.TEST_FILES_DIR / 'EIGENVAL.ispin2.gz')
-        self.assertEqual(eig.ispin, 2)
-        self.assertEqual(eig.nkpt, eig.eigenvalues[Spin.up].shape[0])
-        self.assertEqual(eig.nbands, eig.eigenvalues[Spin.up].shape[1])
-        self.assertEqual(eig.nkpt, eig.eigenvalues[Spin.down].shape[0])
-        self.assertEqual(eig.nbands, eig.eigenvalues[Spin.down].shape[1])
-
-    def test_eigenvalue_band_properties(self):
-        eig = Eigenval(self.TEST_FILES_DIR / 'EIGENVAL.gz')
-        props = eig.eigenvalue_band_properties
-        self.assertAlmostEqual(props[0], 6.4153, places=4)
-        self.assertAlmostEqual(props[1], 7.5587, places=4)
-        self.assertAlmostEqual(props[2], 1.1434, places=4)
-        self.assertEqual(props[3], False)
-
+    def test_reduce_rad_data(self):
+        pass
 
 class WavederTest(PymatgenTest):
     _multiprocess_shared_ = True

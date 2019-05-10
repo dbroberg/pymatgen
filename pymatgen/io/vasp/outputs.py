@@ -3680,6 +3680,39 @@ class Procar:
         return {spin: np.sum(d[:, :, atom_index, orbital_index] * self.weights[:, None])
                 for spin, d in self.data.items()}
 
+    def perc_contained_in_radius_from_site(self, structure, site, radius,
+                                           spinkey, kptindex, bandindex, return_rad_dat=True):
+        """
+
+        Args:
+            structure:
+            site:
+            radius:
+            spinkey:
+            kptindex:
+            bandindex:
+            return_rad_dat:
+        Return:
+
+        """
+        if spinkey not in self.data.keys():
+            raise ValueError("{} not in {}".format(spinkey, self.data.keys()))
+
+        tot_occu = 0.
+        in_radius_occu = 0.
+        rad_dat = []
+        for listsite, prodat in zip(structure, self.data[spinkey][kptindex][bandindex]):
+            dist, jimage = site.distance_and_image_from_frac_coords(listsite.frac_coords)
+            tot_occu += np.sum(prodat)
+            rad_dat.append([dist, np.sum(prodat)])
+            if dist <= radius:
+                in_radius_occu += np.sum(prodat)
+
+        if return_rad_dat:
+            rad_dat.sort()
+            return in_radius_occu / tot_occu, rad_dat
+        else:
+            return in_radius_occu / tot_occu
 
 class Oszicar:
     """
@@ -4728,166 +4761,107 @@ class Wavecar:
         self.ng = temp_ng
         return Chgcar(poscar, data)
 
-    def write_unks(self, directory: str) -> None:
-        """
-        Write the UNK files to the given directory.
+    def prob_density(self, kpoint, band, spin):
+        psi = np.fft.fftn( self.fft_mesh( kpoint, band, spin=spin, shift=False))
+        n = np.abs(np.conj(psi)*psi) # magnitude squared of wavefunction
+        n /= np.sum(n) #normalize the single particle wavefunction to 1
+        return n
 
-        Writes the cell-periodic part of the bloch wavefunctions from the
-        WAVECAR file to each of the UNK files. There will be one UNK file for
-        each of the kpoints in the WAVECAR file.
+    def get_charge_center(self, kpoint, band, spin, guess_site):
+        """Get defect center, accounting for periodic boundary conditions
+         needs smart guess for position (i.e. defect site)"""
+        lattice = Lattice( self.a)
+        den = self.prob_density( kpoint, band, spin)
 
-        Note:
-            wannier90 expects the full kpoint grid instead of the symmetry-
-            reduced one that VASP stores the wavefunctions on. You should run
-            a nscf calculation with ISYM=0 to obtain the correct grid.
+        def get_shortest_dist_vec(index):
+            frac_coords = [index[ax]/den.shape[ax] for ax in range(3)]
+            dist, jimage = guess_site.distance_and_image_from_frac_coords( frac_coords)
+            vec_defect_to_site = lattice.get_cartesian_coords(jimage + frac_coords - guess_site.frac_coords)
+            if abs(np.linalg.norm(vec_defect_to_site) - dist) > 0.001:
+                raise ValueError("Error in computing vector to defect")
+            return vec_defect_to_site
 
-        Args:
-            directory (str): directory where the UNK files are written
-        """
-        out_dir = Path(directory).expanduser()
-        if not out_dir.exists():
-            out_dir.mkdir(parents=False)
-        elif not out_dir.is_dir():
-            raise ValueError('invalid directory')
+        avg = np.zeros(3)
+        for p in itertools.product(range(den.shape[0]), range(den.shape[1]), range(den.shape[2])):
+            parray = get_shortest_dist_vec(p)
+            avg += parray*den[p]
+        center_coords = guess_site.coords + avg/np.sum(den)
+        site_chg_center = PeriodicSite( 'H', center_coords, lattice,
+                                        to_unit_cell=True, coords_are_cartesian=True)
 
-        N = np.prod(self.ng)
-        for ik in range(self.nk):
-            fname = f'UNK{ik+1:05d}.'
-            if self.vasp_type.lower()[0] == 'n':
-                data = np.empty((self.nb, 2, *self.ng), dtype=np.complex128)
-                for ib in range(self.nb):
-                    data[ib, 0, :, :, :] = \
-                        np.fft.ifftn(self.fft_mesh(ik, ib, spinor=0)) * N
-                    data[ib, 1, :, :, :] = \
-                        np.fft.ifftn(self.fft_mesh(ik, ib, spinor=1)) * N
-                Unk(ik+1, data).write_file(str(out_dir / (fname + 'NC')))
-            else:
-                data = np.empty((self.nb, *self.ng), dtype=np.complex128)
-                for ispin in range(self.spin):
-                    for ib in range(self.nb):
-                        data[ib, :, :, :] = \
-                            np.fft.ifftn(self.fft_mesh(ik, ib, spin=ispin)) * N
-                    Unk(ik+1, data).write_file(str(out_dir / (fname + f'{ispin+1}')))
+        return site_chg_center
 
+    def get_total_radial_distrib_from_coords(self, kpt_weights, band, spin, coords,
+                                             coords_are_cartesian=False, reduce_size=False,
+                                             find_charge_center = True):
+        #return radial distrib
+        lattice = Lattice( self.a)
 
-class Eigenval:
-    """
-    Object for reading EIGENVAL file.
+        #store charge centers, if desired
+        test_site = PeriodicSite('H', coords, lattice, to_unit_cell=True,
+                                 coords_are_cartesian=coords_are_cartesian)
+        if not find_charge_center:
+            chg_center_kpts = {kpt: test_site for kpt in range(len(kpt_weights))}
+        else:
+            chg_center_kpts = {}
+            for kpt in range(self.nk):
+                site = self.get_charge_center( kpt, band, spin, test_site)
+                chg_center_kpts[kpt] = site
 
-    .. attribute:: filename
+        store_kpt = {}
+        for kpt in range(self.nk):
+            n = self.prob_density( kpt, band, spin)
+            store_kpt[kpt] = n
 
-        string containing input filename
+        xy = {kpt:[] for kpt in range(self.nk)}
+        xy['tot'] = []
+        for p in itertools.product(range(n.shape[0]), range(n.shape[1]), range(n.shape[2])):
+            frac_coords = [p[ax]/n.shape[ax] for ax in range(3)]
+            store_dist = []
+            for kpt in range(self.nk):
+                dist, jimage = chg_center_kpts[kpt].distance_and_image_from_frac_coords( frac_coords)
+                store_dist.append(dist)
+            pset = [store_kpt[kpt][p] for kpt in range(self.nk)]
+            for kpt in range(self.nk):
+                xy[kpt].append([store_dist[kpt], pset[kpt]])
 
-    .. attribute:: occu_tol
+            tot_p = np.dot( kpt_weights, pset)
+            tot_dist = np.dot( kpt_weights, store_dist) #weight the distance???
+            xy['tot'].append([tot_dist, tot_p])
 
-        tolerance for determining occupation in band properties
+        if reduce_size:
+            output = {}
+            for kpoint in range(self.nk):
+                reduced_x, reduced_y, percentage_y = self._reduce_rad_data(xy[kpoint])
+                output[kpoint] = [ reduced_x, reduced_y, percentage_y]
+            reduced_x, reduced_y, percentage_y = self._reduce_rad_data(xy['tot'])
+            output['tot'] = [ reduced_x, reduced_y, percentage_y]
+            return output
+        else:
+            for kpoint in range(self.nk):
+                xy[kpoint].sort()
+            xy['tot'].sort()
+            return xy
 
-    .. attribute:: ispin
+    def _reduce_rad_data(self, dat):
+        H, xedges, yedges = np.histogram2d( np.array(dat)[:,0], np.array(dat)[:,1], bins=(100., 20))
+        reduced_x, reduced_y, percentage_y = ([], [], [])
+        redyedge = list(yedges[:])
+        redyedge.pop(-1)
+        for xind, xset in enumerate(H):
+            maxy = 0.
+            for yind, yval in enumerate(xset):
+                if yval:
+                    maxy = yedges[yind]
+            reduced_x.append( xedges[xind])
+            reduced_y.append( maxy)
+            previous_tot = percentage_y[-1] if xind else 0.
+            sumset = np.dot(xset, redyedge)
+            percentage_y.append( previous_tot + sumset)
 
-        spin polarization tag (int)
+        percentage_y /= percentage_y[-1]
 
-    .. attribute:: nelect
-
-        number of electrons
-
-    .. attribute:: nkpt
-
-        number of kpoints
-
-    .. attribute:: nbands
-
-        number of bands
-
-    .. attribute:: kpoints
-
-        list of kpoints
-
-    .. attribute:: kpoints_weights
-
-        weights of each kpoint in the BZ, should sum to 1.
-
-    .. attribute:: eigenvalues
-
-        Eigenvalues as a dict of {(spin): np.ndarray(shape=(nkpt, nbands, 2))}.
-        This representation is based on actual ordering in VASP and is meant as
-        an intermediate representation to be converted into proper objects. The
-        kpoint index is 0-based (unlike the 1-based indexing in VASP).
-    """
-
-    def __init__(self, filename, occu_tol=1e-8):
-        """
-        Reads input from filename to construct Eigenval object
-
-        Args:
-            filename (str):     filename of EIGENVAL to read in
-            occu_tol (float):   tolerance for determining band gap
-
-        Returns:
-            a pymatgen.io.vasp.outputs.Eigenval object
-        """
-
-        self.filename = filename
-        self.occu_tol = occu_tol
-
-        with zopen(filename, 'r') as f:
-            self.ispin = int(f.readline().split()[-1])
-
-            # useless header information
-            for _ in range(4):
-                f.readline()
-
-            self.nelect, self.nkpt, self.nbands = \
-                list(map(int, f.readline().split()))
-
-            self.kpoints = []
-            self.kpoints_weights = []
-            if self.ispin == 2:
-                self.eigenvalues = \
-                    {Spin.up: np.zeros((self.nkpt, self.nbands, 2)),
-                     Spin.down: np.zeros((self.nkpt, self.nbands, 2))}
-            else:
-                self.eigenvalues = \
-                    {Spin.up: np.zeros((self.nkpt, self.nbands, 2))}
-
-            ikpt = -1
-            for line in f:
-                if re.search(r'(\s+[\-+0-9eE.]+){4}', str(line)):
-                    ikpt += 1
-                    kpt = list(map(float, line.split()))
-                    self.kpoints.append(kpt[:-1])
-                    self.kpoints_weights.append(kpt[-1])
-                    for i in range(self.nbands):
-                        sl = list(map(float, f.readline().split()))
-                        if len(sl) == 3:
-                            self.eigenvalues[Spin.up][ikpt, i, 0] = sl[1]
-                            self.eigenvalues[Spin.up][ikpt, i, 1] = sl[2]
-                        elif len(sl) == 5:
-                            self.eigenvalues[Spin.up][ikpt, i, 0] = sl[1]
-                            self.eigenvalues[Spin.up][ikpt, i, 1] = sl[3]
-                            self.eigenvalues[Spin.down][ikpt, i, 0] = sl[2]
-                            self.eigenvalues[Spin.down][ikpt, i, 1] = sl[4]
-
-    @property
-    def eigenvalue_band_properties(self):
-        """
-        Band properties from the eigenvalues as a tuple,
-        (band gap, cbm, vbm, is_band_gap_direct).
-        """
-
-        vbm = -float("inf")
-        vbm_kpoint = None
-        cbm = float("inf")
-        cbm_kpoint = None
-        for spin, d in self.eigenvalues.items():
-            for k, val in enumerate(d):
-                for (eigenval, occu) in val:
-                    if occu > self.occu_tol and eigenval > vbm:
-                        vbm = eigenval
-                        vbm_kpoint = k
-                    elif occu <= self.occu_tol and eigenval < cbm:
-                        cbm = eigenval
-                        cbm_kpoint = k
-        return max(cbm - vbm, 0), cbm, vbm, vbm_kpoint == cbm_kpoint
+        return reduced_x, reduced_y, percentage_y
 
 
 class Wavederf:
