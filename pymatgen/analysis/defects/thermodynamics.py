@@ -15,9 +15,6 @@ from pymatgen.analysis.defects.core import DefectEntry, Vacancy, Substitution, I
 from pymatgen.analysis.structure_matcher import PointDefectComparator
 from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
 
-import matplotlib.pyplot as plt
-import matplotlib.cm as cm
-
 __author__ = "Danny Broberg, Shyam Dwaraknath"
 __copyright__ = "Copyright 2018, The Materials Project"
 __version__ = "1.0"
@@ -569,6 +566,8 @@ class DefectPhaseDiagram(MSONable):
             a matplotlib object
 
         """
+        import matplotlib.pyplot as plt
+        import matplotlib.cm as cm
         if xlim is None:
             xlim = (-0.5, self.band_gap+0.5)
         xy = {}
@@ -704,7 +703,7 @@ class DefectPhaseDiagram(MSONable):
             plt.title("{}".format(title), size=ax_fontsize*width)
 
         if saved:
-            plt.savefig(str(title) + "FreyplnravgPlot.pdf")
+            plt.savefig(str(title) + ".pdf")
         else:
             return plt
 

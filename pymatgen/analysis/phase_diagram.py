@@ -617,6 +617,7 @@ class PhaseDiagram(MSONable):
             chempots = {}
             for facet in allfacets:
                 facet_elt_list = [self.qhull_entries[j].name for j in facet]
+                facet_elt_list.sort()
                 facet_name = '-'.join(facet_elt_list)
                 chempots[facet_name] = self._get_facet_chempots(facet)
             return chempots
