@@ -446,13 +446,21 @@ class DefectPhaseDiagram(MSONable):
         _,fdos_vbm = fdos.get_cbm_vbm()
 
         def _get_total_q(ef):
-
+            # for qd_tot, fermi level is determined relative to vbm (so ef is a number relative to VBM)
             qd_tot = sum([
                 d['charge'] * d['conc']
                 for d in self.defect_concentrations(
                     chemical_potentials=chemical_potentials, temperature=temperature, fermi_level=ef)
             ])
-            qd_tot += fdos.get_doping(fermi=ef + fdos_vbm, T=temperature)
+            # for free_carrier_qd, absolute fermi level is required (not referenced to VBM).
+            # Therefore shift ef to be on same absolute scale as the DOS object
+            # (note band gap is scaled for DOS object).
+            free_carrier_qd = fdos.get_doping(fermi=ef + fdos_vbm, T=temperature)
+            if abs(free_carrier_qd) > 10e13:
+                # only count free carriers if reasonably large, otherwise will introduce
+                # noise that depends strongly on accuracy of calculated DOS
+                # especially important if defect formation energies are high.
+                qd_tot += free_carrier_qd
             return qd_tot
 
         return bisect(_get_total_q, -1., self.band_gap + 1.)
@@ -486,9 +494,16 @@ class DefectPhaseDiagram(MSONable):
         _,fdos_vbm = fdos.get_cbm_vbm()
 
         def _get_total_q(ef):
-
             qd_tot = fixed_defect_charge
-            qd_tot += fdos.get_doping(fermi=ef + fdos_vbm, T=temperature)
+            # for free_carrier_qd, absolute fermi level is required (not referenced to VBM).
+            # Therefore shift ef to be on same absolute scale as the DOS object
+            # (note band gap is scaled for DOS object).
+            free_carrier_qd = fdos.get_doping(fermi=ef + fdos_vbm, T=temperature)
+            if abs(free_carrier_qd) > 10e13:
+                # only count free carriers if reasonably large, otherwise will introduce
+                # noise that depends strongly on accuracy of calculated DOS
+                # especially important if defect formation energies are high.
+                qd_tot += free_carrier_qd
             return qd_tot
 
         return bisect(_get_total_q, -1., self.band_gap + 1.)
@@ -523,8 +538,12 @@ class DefectPhaseDiagram(MSONable):
                                                     fermi_level=min_fl_range)
             max_fl_formen = def_entry.formation_energy(chemical_potentials = chemical_potentials,
                                                     fermi_level=max_fl_range)
+            zero_vbm_formen = def_entry.formation_energy(chemical_potentials = chemical_potentials,
+                                                    fermi_level=0.)
+            bandgap_formen = def_entry.formation_energy(chemical_potentials = chemical_potentials,
+                                                    fermi_level=self.band_gap)
 
-            if min_fl_formen < 0. and max_fl_formen < 0.:
+            if zero_vbm_formen < 0. and bandgap_formen < 0.:
                 logger.error("Formation energy is negative through entire gap for entry {} q={}." \
                              " Cannot return dopability limits.".format( def_entry.name, def_entry.charge))
                 return None, None
