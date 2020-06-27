@@ -1594,7 +1594,7 @@ class WavecarTest(PymatgenTest):
             self.w_ncl.write_unks('.')
             unk = Unk.from_file('UNK00001.NC')
             self.assertEqual(unk, unk_ncl)
-            
+
     def test_prob_density(self):
         pass
 
@@ -1606,6 +1606,38 @@ class WavecarTest(PymatgenTest):
 
     def test_reduce_rad_data(self):
         pass
+
+
+class EigenvalTest(PymatgenTest):
+    _multiprocess_shared_ = True
+
+    def test_init(self):
+        eig = Eigenval(self.TEST_FILES_DIR / 'EIGENVAL.gz')
+        self.assertEqual(eig.ispin, 1)
+        self.assertEqual(eig.nkpt, len(eig.kpoints))
+        self.assertEqual(eig.nkpt, len(eig.kpoints_weights))
+        self.assertEqual(eig.nkpt, eig.eigenvalues[Spin.up].shape[0])
+        self.assertEqual(eig.nelect, 16)
+        self.assertEqual(eig.nbands, eig.eigenvalues[Spin.up].shape[1])
+        self.assertTrue(np.max(eig.eigenvalues[Spin.up]) > 0)
+        self.assertTrue(np.min(eig.eigenvalues[Spin.up]) < 0)
+
+    def test_ispin2(self):
+        eig = Eigenval(self.TEST_FILES_DIR / 'EIGENVAL.ispin2.gz')
+        self.assertEqual(eig.ispin, 2)
+        self.assertEqual(eig.nkpt, eig.eigenvalues[Spin.up].shape[0])
+        self.assertEqual(eig.nbands, eig.eigenvalues[Spin.up].shape[1])
+        self.assertEqual(eig.nkpt, eig.eigenvalues[Spin.down].shape[0])
+        self.assertEqual(eig.nbands, eig.eigenvalues[Spin.down].shape[1])
+
+    def test_eigenvalue_band_properties(self):
+        eig = Eigenval(self.TEST_FILES_DIR / 'EIGENVAL.gz')
+        props = eig.eigenvalue_band_properties
+        self.assertAlmostEqual(props[0], 6.4153, places=4)
+        self.assertAlmostEqual(props[1], 7.5587, places=4)
+        self.assertAlmostEqual(props[2], 1.1434, places=4)
+        self.assertEqual(props[3], False)
+
 
 class WavederTest(PymatgenTest):
     _multiprocess_shared_ = True
