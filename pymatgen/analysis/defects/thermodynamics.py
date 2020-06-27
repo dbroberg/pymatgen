@@ -17,6 +17,9 @@ from pymatgen.electronic_structure.dos import FermiDos
 from pymatgen.analysis.defects.core import DefectEntry
 from pymatgen.analysis.structure_matcher import PointDefectComparator
 
+import matplotlib.pyplot as plt
+import matplotlib.cm as cm
+
 __author__ = "Danny Broberg, Shyam Dwaraknath"
 __copyright__ = "Copyright 2018, The Materials Project"
 __version__ = "1.0"
@@ -533,8 +536,6 @@ class DefectPhaseDiagram(MSONable):
             a matplotlib object
 
         """
-        import matplotlib.pyplot as plt
-        import matplotlib.cm as cm
         if xlim is None:
             xlim = (-0.5, self.band_gap + 0.5)
         xy = {}
