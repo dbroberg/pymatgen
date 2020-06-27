@@ -5,12 +5,14 @@ Subpackages
 -----------
 
 .. toctree::
+   :maxdepth: 7
 
 
 Submodules
 ----------
 
 .. toctree::
+   :maxdepth: 7
 
    pymatgen.io.lammps.data
    pymatgen.io.lammps.inputs
@@ -21,6 +23,6 @@ Module contents
 ---------------
 
 .. automodule:: pymatgen.io.lammps
-    :members:
-    :undoc-members:
-    :show-inheritance:
+   :members:
+   :undoc-members:
+   :show-inheritance:

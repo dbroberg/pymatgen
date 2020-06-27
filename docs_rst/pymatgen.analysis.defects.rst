@@ -5,12 +5,14 @@ Subpackages
 -----------
 
 .. toctree::
+   :maxdepth: 7
 
 
 Submodules
 ----------
 
 .. toctree::
+   :maxdepth: 7
 
    pymatgen.analysis.defects.core
    pymatgen.analysis.defects.corrections
@@ -24,6 +26,6 @@ Module contents
 ---------------
 
 .. automodule:: pymatgen.analysis.defects
-    :members:
-    :undoc-members:
-    :show-inheritance:
+   :members:
+   :undoc-members:
+   :show-inheritance:

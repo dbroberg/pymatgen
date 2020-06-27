@@ -5,12 +5,14 @@ Subpackages
 -----------
 
 .. toctree::
+   :maxdepth: 7
 
 
 Submodules
 ----------
 
 .. toctree::
+   :maxdepth: 7
 
    pymatgen.analysis.structure_prediction.dopant_predictor
    pymatgen.analysis.structure_prediction.substitution_probability
@@ -21,6 +23,6 @@ Module contents
 ---------------
 
 .. automodule:: pymatgen.analysis.structure_prediction
-    :members:
-    :undoc-members:
-    :show-inheritance:
+   :members:
+   :undoc-members:
+   :show-inheritance:

@@ -2,26 +2,42 @@
 # Copyright (c) Pymatgen Development Team.
 # Distributed under the terms of the MIT License.
 
-
-import math
-import warnings
-from collections import namedtuple, defaultdict
-
-import ruamel.yaml as yaml
-import os
-import json
-from copy import deepcopy
-
-from monty.dev import deprecated
-
-from pymatgen.analysis.molecule_structure_comparator import CovalentRadius
-from pymatgen.core.sites import PeriodicSite, Site
-
 """
 This module provides classes to perform analyses of
 the local environments (e.g., finding near neighbors)
 of single sites in molecules and structures.
 """
+
+import math
+import warnings
+import os
+import json
+
+import ruamel.yaml as yaml
+import numpy as np
+
+from copy import deepcopy
+from math import pow, pi, asin, sqrt, exp, sin, cos, acos, fabs, atan2
+from collections import namedtuple, defaultdict
+from functools import lru_cache
+from typing import Union, List, Optional
+from bisect import bisect_left
+
+from scipy.spatial import Voronoi
+from monty.dev import deprecated
+from monty.dev import requires
+from monty.serialization import loadfn
+
+from pymatgen import Element, Structure, IStructure
+from pymatgen.analysis.bond_valence import BV_PARAMS, BVAnalyzer
+from pymatgen.core.structure import PeriodicNeighbor
+from pymatgen.analysis.molecule_structure_comparator import CovalentRadius
+from pymatgen.core.sites import PeriodicSite, Site
+
+try:
+    from openbabel import openbabel as ob
+except Exception:
+    ob = None
 
 __author__ = "Shyue Ping Ong, Geoffroy Hautier, Sai Jayaraman," + \
              " Nils E. R. Zimmermann, Bharat Medasani, Evan Spotte-Smith"
@@ -31,25 +47,6 @@ __maintainer__ = "Nils E. R. Zimmermann"
 __email__ = "nils.e.r.zimmermann@gmail.com"
 __status__ = "Production"
 __date__ = "August 17, 2017"
-
-from math import pow, pi, asin, sqrt, exp, sin, cos, acos, fabs, atan2
-import numpy as np
-
-try:
-    import openbabel as ob
-    import pybel as pb
-except:
-    pb = None
-    ob = None
-
-from monty.dev import requires
-from monty.serialization import loadfn
-
-from bisect import bisect_left
-from scipy.spatial import Voronoi
-
-from pymatgen import Element
-from pymatgen.analysis.bond_valence import BV_PARAMS, BVAnalyzer
 
 _directory = os.path.join(os.path.dirname(__file__))
 
@@ -67,12 +64,13 @@ class ValenceIonicRadiusEvaluator:
     """
     Computes site valences and ionic radii for a structure using bond valence
     analyzer
-
-    Args:
-        structure: pymatgen.core.structure.Structure
     """
 
     def __init__(self, structure):
+        """
+        Args:
+            structure: pymatgen.core.structure.Structure
+        """
         self._structure = structure.copy()
         self._valences = self._get_valences()
         self._ionic_radii = self._get_ionic_radii()
@@ -154,7 +152,7 @@ class ValenceIonicRadiusEvaluator:
                 try:
                     radius = _ion_radii[el][str(oxi_state)][str(new_coord_no)]
                     coord_no = new_coord_no
-                except:
+                except Exception:
                     tab_coords = sorted(
                         map(int, _ion_radii[el][str(oxi_state)].keys()))
                     new_coord_no = nearest_key(tab_coords, coord_no)
@@ -189,13 +187,13 @@ class ValenceIonicRadiusEvaluator:
             self._structure = bv.get_oxi_state_decorated_structure(
                 self._structure)
             valences = bv.get_valences(self._structure)
-        except:
+        except Exception:
             try:
                 bv = BVAnalyzer(symm_tol=0.0)
                 self._structure = bv.get_oxi_state_decorated_structure(
                     self._structure)
                 valences = bv.get_valences(self._structure)
-            except:
+            except Exception:
                 valences = []
                 for site in self._structure.sites:
                     if len(site.specie.common_oxidation_states) > 0:
@@ -231,6 +229,34 @@ class NearNeighbors:
 
     def __hash__(self):
         return len(self.__dict__.items())
+
+    @property
+    def structures_allowed(self):
+        """
+        Boolean property: can this NearNeighbors class be used with Structure
+        objects?
+        """
+        raise NotImplementedError("structures_allowed"
+                                  " is not defined!")
+
+    @property
+    def molecules_allowed(self):
+        """
+        Boolean property: can this NearNeighbors class be used with Molecule
+        objects?
+        """
+        raise NotImplementedError("molecules_allowed"
+                                  " is not defined!")
+
+    @property
+    def extend_structure_molecules(self):
+        """
+        Boolean property: Do Molecules need to be converted to Structures to use
+        this NearNeighbors class? Note: this property is not defined for classes
+        for which molecules_allowed == False.
+        """
+        raise NotImplementedError("extend_structures_molecule"
+                                  " is not defined!")
 
     def get_cn(self, structure, n, use_weights=False):
         """
@@ -336,7 +362,7 @@ class NearNeighbors:
             structure (Structure): input structure.
             n (integer): index of site for which to determine near-neighbor
                 information.
- 
+
         Returns:
             siw (list of dicts): each dictionary provides information
                 about a single near neighbor, where key 'site' gives
@@ -515,7 +541,7 @@ class NearNeighbors:
                 return i
         raise Exception('Site not found!')
 
-    def get_bonded_structure(self, structure, decorate=False):
+    def get_bonded_structure(self, structure, decorate=False, weights=True):
         """
         Obtain a StructureGraph object using this NearNeighbor
         class. Requires the optional dependency networkx
@@ -526,8 +552,10 @@ class NearNeighbors:
             decorate (bool): whether to annotate site properties
             with order parameters using neighbors determined by
             this NearNeighbor class
+            weights (bool): whether to include edge weights from
+            NearNeighbor class in StructureGraph
 
-        Returns: a pymatgen.analysis.graphs.BondedStructure object
+        Returns: a pymatgen.analysis.graphs.StructureGraph object
         """
 
         # requires optional dependency which is why it's not a top-level import
@@ -542,7 +570,7 @@ class NearNeighbors:
                                 for n in range(len(structure))]
             structure.add_site_property('order_parameters', order_parameters)
 
-        sg = StructureGraph.with_local_env_strategy(structure, self)
+        sg = StructureGraph.with_local_env_strategy(structure, self, weights=weights)
 
         return sg
 
@@ -591,26 +619,27 @@ class VoronoiNN(NearNeighbors):
     """
     Uses a Voronoi algorithm to determine near neighbors for each site in a
     structure.
-
-    Args:
-        tol (float): tolerance parameter for near-neighbor finding. Faces that are smaller
-            than `tol` fraction of the largest face are not included in the tessellation.
-            (default: 0).
-        targets (Element or list of Elements): target element(s).
-        cutoff (float): cutoff radius in Angstrom to look for near-neighbor
-            atoms. Defaults to 13.0.
-        allow_pathological (bool): whether to allow infinite vertices in
-            determination of Voronoi coordination.
-        weight (string) - Statistic used to weigh neighbors (see the statistics
-            available in get_voronoi_polyhedra)
-        extra_nn_info (bool) - Add all polyhedron info to `get_nn_info`
-        compute_adj_neighbors (bool) - Whether to compute which neighbors are adjacent. Turn off
-            for faster performance
     """
 
     def __init__(self, tol=0, targets=None, cutoff=13.0,
                  allow_pathological=False, weight='solid_angle',
                  extra_nn_info=True, compute_adj_neighbors=True):
+        """
+        Args:
+            tol (float): tolerance parameter for near-neighbor finding. Faces that are smaller
+                than `tol` fraction of the largest face are not included in the tessellation.
+                (default: 0).
+            targets (Element or list of Elements): target element(s).
+            cutoff (float): cutoff radius in Angstrom to look for near-neighbor
+                atoms. Defaults to 13.0.
+            allow_pathological (bool): whether to allow infinite vertices in
+                determination of Voronoi coordination.
+            weight (string) - Statistic used to weigh neighbors (see the statistics
+                available in get_voronoi_polyhedra)
+            extra_nn_info (bool) - Add all polyhedron info to `get_nn_info`
+            compute_adj_neighbors (bool) - Whether to compute which neighbors are adjacent. Turn off
+                for faster performance
+        """
         super().__init__()
         self.tol = tol
         self.cutoff = cutoff
@@ -619,6 +648,22 @@ class VoronoiNN(NearNeighbors):
         self.weight = weight
         self.extra_nn_info = extra_nn_info
         self.compute_adj_neighbors = compute_adj_neighbors
+
+    @property
+    def structures_allowed(self):
+        """
+        Boolean property: can this NearNeighbors class be used with Structure
+        objects?
+        """
+        return True
+
+    @property
+    def molecules_allowed(self):
+        """
+        Boolean property: can this NearNeighbors class be used with Molecule
+        objects?
+        """
+        return False
 
     def get_voronoi_polyhedra(self, structure, n):
         """
@@ -772,7 +817,7 @@ class VoronoiNN(NearNeighbors):
             if isinstance(site.specie, Element):
                 return [site.specie]
             return [Element(site.specie)]
-        except:
+        except Exception:
             return site.species.elements
 
     def _is_in_targets(self, site, targets):
@@ -825,7 +870,7 @@ class VoronoiNN(NearNeighbors):
         # Iterate through all the faces in the tessellation
         results = {}
         for nn, vind in voro.ridge_dict.items():
-            # Get only those that include the cite in question
+            # Get only those that include the site in question
             if site_idx in nn:
                 other_site = nn[0] if nn[1] == site_idx else nn[1]
                 if -1 in vind:
@@ -879,6 +924,10 @@ class VoronoiNN(NearNeighbors):
                 if compute_adj_neighbors:
                     results[other_site]['verts'] = vind
 
+        # all sites should have atleast two connected ridges in periodic system
+        if not results:
+            raise ValueError("No Voronoi neighbours found for site - try increasing cutoff")
+
         # Get only target elements
         resultweighted = {}
         for nn_index, nstats in results.items():
@@ -920,7 +969,7 @@ class VoronoiNN(NearNeighbors):
         return resultweighted
 
     def get_nn_info(self, structure, n):
-        """"
+        """
         Get all near-neighbor sites as well as the associated image locations
         and weights of the site with index n in structure
         using Voronoi decomposition.
@@ -929,7 +978,7 @@ class VoronoiNN(NearNeighbors):
             structure (Structure): input structure.
             n (integer): index of site for which to determine near-neighbor
                 sites.
- 
+
         Returns:
             siw (list of tuples (Site, array, float)): tuples, each one
                 of which represents a coordinated site, its image location,
@@ -943,6 +992,13 @@ class VoronoiNN(NearNeighbors):
         return self._extract_nn_info(structure, nns)
 
     def get_all_nn_info(self, structure):
+        """
+        Args:
+            structure (Structure): input structure.
+
+        Returns:
+            All nn info for all sites.
+        """
         all_voro_cells = self.get_all_voronoi_polyhedra(structure)
         return [self._extract_nn_info(structure, cell) for cell in
                 all_voro_cells]
@@ -1016,15 +1072,16 @@ class JmolNN(NearNeighbors):
     of Jmol's default autoBond() algorithm. This version of the algorithm
     does not take into account any information regarding known charge
     states.
-
-    Args:
-        tol (float): tolerance parameter for bond determination
-            (default: 0.56).
-        el_radius_updates: (dict) symbol->float to override default atomic 
-            radii table values 
     """
 
     def __init__(self, tol=0.56, min_bond_distance=0.4, el_radius_updates=None):
+        """
+        Args:
+            tol (float): tolerance parameter for bond determination
+                (default: 0.56).
+            el_radius_updates: (dict) symbol->float to override default atomic
+                radii table values
+        """
         self.tol = tol
         self.min_bond_distance = min_bond_distance
 
@@ -1037,6 +1094,31 @@ class JmolNN(NearNeighbors):
         # Update any user preference elemental radii
         if el_radius_updates:
             self.el_radius.update(el_radius_updates)
+
+    @property
+    def structures_allowed(self):
+        """
+        Boolean property: can this NearNeighbors class be used with Structure
+        objects?
+        """
+        return True
+
+    @property
+    def molecules_allowed(self):
+        """
+        Boolean property: can this NearNeighbors class be used with Molecule
+        objects?
+        """
+        return True
+
+    @property
+    def extend_structure_molecules(self):
+        """
+        Boolean property: Do Molecules need to be converted to Structures to use
+        this NearNeighbors class? Note: this property is not defined for classes
+        for which molecules_allowed == False.
+        """
+        return True
 
     def get_max_bond_distance(self, el1_sym, el2_sym):
         """
@@ -1061,7 +1143,7 @@ class JmolNN(NearNeighbors):
             structure (Structure): input structure.
             n (integer): index of site for which to determine near
                 neighbors.
- 
+
         Returns:
             siw (list of tuples (Site, array, float)): tuples, each one
                 of which represents a neighbor site, its image location,
@@ -1081,16 +1163,17 @@ class JmolNN(NearNeighbors):
         min_rad = min(bonds.values())
 
         siw = []
-        for neighb, dist in structure.get_neighbors(site, max_rad):
+        for nn in structure.get_neighbors(site, max_rad):
+            dist = nn.nn_distance
             # Confirm neighbor based on bond length specific to atom pair
-            if dist <= (bonds[(site.specie, neighb.specie)]) and (
-                    dist > self.min_bond_distance):
+            if dist <= (bonds[(site.specie, nn.specie)]) and (
+                    nn.nn_distance > self.min_bond_distance):
                 weight = min_rad / dist
-                siw.append({'site': neighb,
-                            'image': self._get_image(structure, neighb),
+                siw.append({'site': nn,
+                            'image': self._get_image(structure, nn),
                             'weight': weight,
                             'site_index': self._get_original_site(structure,
-                                                                  neighb)})
+                                                                  nn)})
         return siw
 
 
@@ -1100,21 +1183,46 @@ class MinimumDistanceNN(NearNeighbors):
     nearest neighbor(s) at distance, d_min, plus all neighbors
     within a distance (1 + tol) * d_min, where tol is a
     (relative) distance tolerance parameter.
-
-    Args:
-        tol (float): tolerance parameter for neighbor identification
-            (default: 0.1).
-        cutoff (float): cutoff radius in Angstrom to look for trial
-            near-neighbor sites (default: 10.0).
-        get_all_sites (boolean): If this is set to True then the neighbor
-            sites are only determined by the cutoff radius, tol is ignored
-
     """
 
     def __init__(self, tol=0.1, cutoff=10.0, get_all_sites=False):
+        """
+        Args:
+            tol (float): tolerance parameter for neighbor identification
+                (default: 0.1).
+            cutoff (float): cutoff radius in Angstrom to look for trial
+                near-neighbor sites (default: 10.0).
+            get_all_sites (boolean): If this is set to True then the neighbor
+                sites are only determined by the cutoff radius, tol is ignored
+        """
         self.tol = tol
         self.cutoff = cutoff
         self.get_all_sites = get_all_sites
+
+    @property
+    def structures_allowed(self):
+        """
+        Boolean property: can this NearNeighbors class be used with Structure
+        objects?
+        """
+        return True
+
+    @property
+    def molecules_allowed(self):
+        """
+        Boolean property: can this NearNeighbors class be used with Molecule
+        objects?
+        """
+        return True
+
+    @property
+    def extend_structure_molecules(self):
+        """
+        Boolean property: Do Molecules need to be converted to Structures to use
+        this NearNeighbors class? Note: this property is not defined for classes
+        for which molecules_allowed == False.
+        """
+        return True
 
     def get_nn_info(self, structure, n):
         """
@@ -1126,7 +1234,7 @@ class MinimumDistanceNN(NearNeighbors):
             structure (Structure): input structure.
             n (integer): index of site for which to determine near
                 neighbors.
- 
+
         Returns:
             siw (list of tuples (Site, array, float)): tuples, each one
                 of which represents a neighbor site, its image location,
@@ -1137,24 +1245,25 @@ class MinimumDistanceNN(NearNeighbors):
         neighs_dists = structure.get_neighbors(site, self.cutoff)
 
         siw = []
-        if self.get_all_sites == True:
-            for s, dist in neighs_dists:
-                    w = dist
-                    siw.append({'site': s,
-                                'image': self._get_image(structure, s),
-                                'weight': w,
-                                'site_index': self._get_original_site(structure,
-                                                                  s)})
+        if self.get_all_sites:
+            for nn in neighs_dists:
+                w = nn.nn_distance
+                siw.append({'site': nn,
+                            'image': self._get_image(structure, nn),
+                            'weight': w,
+                            'site_index': self._get_original_site(structure,
+                                                                  nn)})
         else:
-            min_dist = min([dist for neigh, dist in neighs_dists])
-            for s, dist in neighs_dists:
+            min_dist = min([nn.nn_distance for nn in neighs_dists])
+            for nn in neighs_dists:
+                dist = nn.nn_distance
                 if dist < (1.0 + self.tol) * min_dist:
                     w = min_dist / dist
-                    siw.append({'site': s,
-                                'image': self._get_image(structure, s),
+                    siw.append({'site': nn,
+                                'image': self._get_image(structure, nn),
                                 'weight': w,
                                 'site_index': self._get_original_site(structure,
-                                                                  s)})
+                                                                      nn)})
         return siw
 
 
@@ -1164,18 +1273,44 @@ class OpenBabelNN(NearNeighbors):
 
     NOTE: This strategy is only appropriate for molecules, and not for
     structures.
-
-    Args:
-        order (bool): True if bond order should be returned as a weight, False
-        if bond length should be used as a weight.
-
     """
 
-    @requires(pb and ob,
-              "OpenBabelNN requires openbabel to be installed with "
-              "Python bindings. Please get it at http://openbabel.org.")
+    @requires(ob,
+              "BabelMolAdaptor requires openbabel to be installed with "
+              "Python bindings. Please get it at http://openbabel.org "
+              "(version >=3.0.0).")
     def __init__(self, order=True):
+        """
+        Args:
+            order (bool): True if bond order should be returned as a weight, False
+            if bond length should be used as a weight.
+        """
         self.order = order
+
+    @property
+    def structures_allowed(self):
+        """
+        Boolean property: can this NearNeighbors class be used with Structure
+        objects?
+        """
+        return False
+
+    @property
+    def molecules_allowed(self):
+        """
+        Boolean property: can this NearNeighbors class be used with Molecule
+        objects?
+        """
+        return True
+
+    @property
+    def extend_structure_molecules(self):
+        """
+        Boolean property: Do Molecules need to be converted to Structures to use
+        this NearNeighbors class? Note: this property is not defined for classes
+        for which molecules_allowed == False.
+        """
+        return False
 
     def get_nn_info(self, structure, n):
         """
@@ -1185,7 +1320,7 @@ class OpenBabelNN(NearNeighbors):
         :param molecule: input Molecule.
         :param n: index of site for which to determine near neighbors.
         :return: [dict] representing a neighboring site and the type of
-        bond present between site n and the neighboring site.
+            bond present between site n and the neighboring site.
         """
 
         from pymatgen.io.babel import BabelMolAdaptor
@@ -1299,18 +1434,44 @@ class CovalentBondNN(NearNeighbors):
 
     NOTE: This strategy is only appropriate for molecules, and not for
     structures.
-
-    Args:
-        tol (float): Tolerance for covalent bond checking.
-        order (bool): If True (default), this class will compute bond orders. If
-        False, bond lengths will be computed
     """
 
     def __init__(self, tol=0.2, order=True):
+        """
+        Args:
+            tol (float): Tolerance for covalent bond checking.
+            order (bool): If True (default), this class will compute bond
+                orders. If False, bond lengths will be computed
+        """
         self.tol = tol
         self.order = order
 
         self.bonds = None
+
+    @property
+    def structures_allowed(self):
+        """
+        Boolean property: can this NearNeighbors class be used with Structure
+        objects?
+        """
+        return False
+
+    @property
+    def molecules_allowed(self):
+        """
+        Boolean property: can this NearNeighbors class be used with Molecule
+        objects?
+        """
+        return True
+
+    @property
+    def extend_structure_molecules(self):
+        """
+        Boolean property: Do Molecules need to be converted to Structures to use
+        this NearNeighbors class? Note: this property is not defined for classes
+        for which molecules_allowed == False.
+        """
+        return False
 
     def get_nn_info(self, structure, n):
         """
@@ -1320,7 +1481,7 @@ class CovalentBondNN(NearNeighbors):
         :param structure: input Molecule.
         :param n: index of site for which to determine near neighbors.
         :return: [dict] representing a neighboring site and the type of
-        bond present between site n and the neighboring site.
+            bond present between site n and the neighboring site.
         """
 
         # This is unfortunately inefficient, but is the best way to fit the
@@ -1431,17 +1592,43 @@ class MinimumOKeeffeNN(NearNeighbors):
     relative tolerance, where bond valence parameters from O'Keeffe's
     bond valence method (J. Am. Chem. Soc. 1991, 3226-3229) are used
     to calculate relative distances.
-
-    Args:
-        tol (float): tolerance parameter for neighbor identification
-            (default: 0.1).
-        cutoff (float): cutoff radius in Angstrom to look for trial
-            near-neighbor sites (default: 10.0).
     """
 
     def __init__(self, tol=0.1, cutoff=10.0):
+        """
+        Args:
+            tol (float): tolerance parameter for neighbor identification
+                (default: 0.1).
+            cutoff (float): cutoff radius in Angstrom to look for trial
+                near-neighbor sites (default: 10.0).
+        """
         self.tol = tol
         self.cutoff = cutoff
+
+    @property
+    def structures_allowed(self):
+        """
+        Boolean property: can this NearNeighbors class be used with Structure
+        objects?
+        """
+        return True
+
+    @property
+    def molecules_allowed(self):
+        """
+        Boolean property: can this NearNeighbors class be used with Molecule
+        objects?
+        """
+        return True
+
+    @property
+    def extend_structure_molecules(self):
+        """
+        Boolean property: Do Molecules need to be converted to Structures to use
+        this NearNeighbors class? Note: this property is not defined for classes
+        for which molecules_allowed == False.
+        """
+        return True
 
     def get_nn_info(self, structure, n):
         """
@@ -1453,7 +1640,7 @@ class MinimumOKeeffeNN(NearNeighbors):
             structure (Structure): input structure.
             n (integer): index of site for which to determine near
                 neighbors.
- 
+
         Returns:
             siw (list of tuples (Site, array, float)): tuples, each one
                 of which represents a neighbor site, its image location,
@@ -1464,14 +1651,16 @@ class MinimumOKeeffeNN(NearNeighbors):
         neighs_dists = structure.get_neighbors(site, self.cutoff)
         try:
             eln = site.specie.element
-        except:
+        except Exception:
             eln = site.species_string
 
         reldists_neighs = []
-        for neigh, dist in neighs_dists:
+        for nn in neighs_dists:
+            neigh = nn
+            dist = nn.nn_distance
             try:
                 el2 = neigh.specie.element
-            except:
+            except Exception:
                 el2 = neigh.species_string
             reldists_neighs.append([dist / get_okeeffe_distance_prediction(
                 eln, el2), neigh])
@@ -1497,17 +1686,34 @@ class MinimumVIRENN(NearNeighbors):
     relative tolerance, where atom radii from the
     ValenceIonicRadiusEvaluator (VIRE) are used
     to calculate relative distances.
-
-    Args:
-        tol (float): tolerance parameter for neighbor identification
-            (default: 0.1).
-        cutoff (float): cutoff radius in Angstrom to look for trial
-            near-neighbor sites (default: 10.0).
     """
 
     def __init__(self, tol=0.1, cutoff=10.0):
+        """
+        Args:
+            tol (float): tolerance parameter for neighbor identification
+                (default: 0.1).
+            cutoff (float): cutoff radius in Angstrom to look for trial
+                near-neighbor sites (default: 10.0).
+        """
         self.tol = tol
         self.cutoff = cutoff
+
+    @property
+    def structures_allowed(self):
+        """
+        Boolean property: can this NearNeighbors class be used with Structure
+        objects?
+        """
+        return True
+
+    @property
+    def molecules_allowed(self):
+        """
+        Boolean property: can this NearNeighbors class be used with Molecule
+        objects?
+        """
+        return False
 
     def get_nn_info(self, structure, n):
         """
@@ -1525,16 +1731,16 @@ class MinimumVIRENN(NearNeighbors):
                 of which represents a neighbor site, its image location,
                 and its weight.
         """
-
-        vire = ValenceIonicRadiusEvaluator(structure)
+        vire = _get_vire(structure)
         site = vire.structure[n]
         neighs_dists = vire.structure.get_neighbors(site, self.cutoff)
         rn = vire.radii[vire.structure[n].species_string]
 
         reldists_neighs = []
-        for neigh, dist in neighs_dists:
-            reldists_neighs.append([dist / (
-                    vire.radii[neigh.species_string] + rn), neigh])
+        for nn in neighs_dists:
+            reldists_neighs.append([nn.nn_distance / (
+                    vire.radii[nn.species_string] + rn),
+                                    nn])
 
         siw = []
         min_reldist = min([reldist for reldist, neigh in reldists_neighs])
@@ -1548,6 +1754,38 @@ class MinimumVIRENN(NearNeighbors):
                                 vire.structure, s)})
 
         return siw
+
+
+def _get_vire(structure: Union[Structure, IStructure]):
+    """Get the ValenceIonicRadiusEvaluator object for an structure taking
+    advantage of caching.
+
+    Args:
+        structure: A structure.
+
+    Returns:
+        Output of `ValenceIonicRadiusEvaluator(structure)`
+    """
+    # pymatgen does not hash Structure objects, so we need
+    # to cast from Structure to the immutable IStructure
+    if isinstance(structure, Structure):
+        structure = IStructure.from_sites(structure)
+
+    return _get_vire_istructure(structure)
+
+
+@lru_cache(maxsize=1)
+def _get_vire_istructure(structure: IStructure):
+    """Get the ValenceIonicRadiusEvaluator object for an immutable structure
+    taking advantage of caching.
+
+    Args:
+        structure: A structure.
+
+    Returns:
+        Output of `ValenceIonicRadiusEvaluator(structure)`
+    """
+    return ValenceIonicRadiusEvaluator(structure)
 
 
 def solid_angle(center, coords):
@@ -1575,10 +1813,10 @@ def solid_angle(center, coords):
     for i in range(1, len(r) - 1):
         j = i + 1
         tp = np.abs(np.dot(r[0], np.cross(r[i], r[j])))
-        de = r_norm[0] * r_norm[i] * r_norm[j] + \
-             r_norm[j] * np.dot(r[0], r[i]) + \
-             r_norm[i] * np.dot(r[0], r[j]) + \
-             r_norm[0] * np.dot(r[i], r[j])
+        de = (r_norm[0] * r_norm[i] * r_norm[j] +
+              r_norm[j] * np.dot(r[0], r[i]) +
+              r_norm[i] * np.dot(r[0], r[j]) +
+              r_norm[0] * np.dot(r[i], r[j]))
         if de == 0:
             my_angle = 0.5 * pi if tp > 0 else -0.5 * pi
         else:
@@ -1600,8 +1838,7 @@ def vol_tetra(vt1, vt2, vt3, vt4):
     Returns:
         (float): volume of the tetrahedron.
     """
-    vol_tetra = np.abs(np.dot((vt1 - vt4),
-                              np.cross((vt2 - vt4), (vt3 - vt4)))) / 6
+    vol_tetra = np.abs(np.dot((vt1 - vt4), np.cross((vt2 - vt4), (vt3 - vt4)))) / 6
     return vol_tetra
 
 
@@ -1652,12 +1889,10 @@ def get_okeeffe_distance_prediction(el1, el2):
     c1 = el1_okeeffe_params['c']
     c2 = el2_okeeffe_params['c']
 
-    return r1 + r2 - r1 * r2 * pow(
-        sqrt(c1) - sqrt(c2), 2) / (c1 * r1 + c2 * r2)
+    return r1 + r2 - r1 * r2 * pow(sqrt(c1) - sqrt(c2), 2) / (c1 * r1 + c2 * r2)
 
 
-def get_neighbors_of_site_with_index(struct, n, approach="min_dist", delta=0.1, \
-                                     cutoff=10.0):
+def get_neighbors_of_site_with_index(struct, n, approach="min_dist", delta=0.1, cutoff=10.0):
     """
     Returns the neighbors of a given site using a specific neighbor-finding
     method.
@@ -1665,11 +1900,11 @@ def get_neighbors_of_site_with_index(struct, n, approach="min_dist", delta=0.1, 
     Args:
         struct (Structure): input structure.
         n (int): index of site in Structure object for which motif type
-                is to be determined.
+            is to be determined.
         approach (str): type of neighbor-finding approach, where
-              "min_dist" will use the MinimumDistanceNN class,
-              "voronoi" the VoronoiNN class, "min_OKeeffe" the
-              MinimumOKeeffe class, and "min_VIRE" the MinimumVIRENN class.
+            "min_dist" will use the MinimumDistanceNN class,
+            "voronoi" the VoronoiNN class, "min_OKeeffe" the
+            MinimumOKeeffe class, and "min_VIRE" the MinimumVIRENN class.
         delta (float): tolerance involved in neighbor finding.
         cutoff (float): (large) radius to find tentative neighbors.
 
@@ -1693,8 +1928,7 @@ def get_neighbors_of_site_with_index(struct, n, approach="min_dist", delta=0.1, 
             approach))
 
 
-def site_is_of_motif_type(struct, n, approach="min_dist", delta=0.1, \
-                          cutoff=10.0, thresh=None):
+def site_is_of_motif_type(struct, n, approach="min_dist", delta=0.1, cutoff=10.0, thresh=None):
     """
     Returns the motif type of the site with index n in structure struct;
     currently featuring "tetrahedral", "octahedral", "bcc", and "cp"
@@ -1792,13 +2026,13 @@ class LocalStructOrderParams:
 
     __supported_types = (
         "cn", "sgl_bd", "bent", "tri_plan", "tri_plan_max", "reg_tri",
-        "sq_plan", \
+        "sq_plan",
         "sq_plan_max", "pent_plan", "pent_plan_max", "sq", "tet", "tet_max",
-        "tri_pyr", \
-        "sq_pyr", "sq_pyr_legacy", "tri_bipyr", "sq_bipyr", "oct", \
-        "oct_legacy", "pent_pyr", "hex_pyr", "pent_bipyr", "hex_bipyr", \
+        "tri_pyr",
+        "sq_pyr", "sq_pyr_legacy", "tri_bipyr", "sq_bipyr", "oct",
+        "oct_legacy", "pent_pyr", "hex_pyr", "pent_bipyr", "hex_bipyr",
         "T", "cuboct", "cuboct_max", "see_saw_rect", "bcc", "q2", "q4", "q6",
-        "oct_max", \
+        "oct_max",
         "hex_plan_max", "sq_face_cap_trig_pris")
 
     def __init__(self, types, parameters=None, cutoff=-10.0):
@@ -1906,16 +2140,13 @@ class LocalStructOrderParams:
         """
         for t in types:
             if t not in LocalStructOrderParams.__supported_types:
-                raise ValueError("Unknown order parameter type (" + \
-                                 t + ")!")
+                raise ValueError("Unknown order parameter type (" + t + ")!")
         self._types = tuple(types)
 
         self._comp_azi = False
         self._params = []
         for i, t in enumerate(self._types):
-            d = deepcopy(default_op_params[t]) if default_op_params[
-                                                      t] is not None \
-                else None
+            d = deepcopy(default_op_params[t]) if default_op_params[t] is not None else None
             if parameters is None:
                 self._params.append(d)
             elif parameters[i] is None:
@@ -1971,8 +2202,7 @@ class LocalStructOrderParams:
 
     @property
     def num_ops(self):
-
-        """"
+        """
         Returns:
             int: the number of different order parameters that are targeted
                 to be calculated.
@@ -1982,8 +2212,7 @@ class LocalStructOrderParams:
 
     @property
     def last_nneigh(self):
-
-        """"
+        """
         Returns:
             int: the number of neighbors encountered during the most
                 recent order parameter calculation. A value of -1 indicates
@@ -1995,7 +2224,7 @@ class LocalStructOrderParams:
 
     def compute_trigonometric_terms(self, thetas, phis):
 
-        """"
+        """
         Computes trigonometric terms that are required to
         calculate bond orientational order parameters using
         internal variables.
@@ -2034,10 +2263,8 @@ class LocalStructOrderParams:
                 self._pow_sin_t[i - 1], self._pow_sin_t[1])]
             self._pow_cos_t[i] = [e[0] * e[1] for e in zip(
                 self._pow_cos_t[i - 1], self._pow_cos_t[1])]
-            self._sin_n_p[i] = [sin(float(i) * float(p)) \
-                                for p in phis]
-            self._cos_n_p[i] = [cos(float(i) * float(p)) \
-                                for p in phis]
+            self._sin_n_p[i] = [sin(float(i) * float(p)) for p in phis]
+            self._cos_n_p[i] = [cos(float(i) * float(p)) for p in phis]
 
     def get_q2(self, thetas=None, phis=None):
 
@@ -2141,12 +2368,12 @@ class LocalStructOrderParams:
         sqrt_1_pi = sqrt(1.0 / pi)
 
         pre_y_4_4 = [i16_3 * sqrt_35_2pi * val for val in self._pow_sin_t[4]]
-        pre_y_4_3 = [i8_3 * sqrt_35_pi * val[0] * val[1] \
+        pre_y_4_3 = [i8_3 * sqrt_35_pi * val[0] * val[1]
                      for val in zip(self._pow_sin_t[3], self._pow_cos_t[1])]
-        pre_y_4_2 = [i8_3 * sqrt_5_2pi * val[0] * (7.0 * val[1] - 1.0) \
+        pre_y_4_2 = [i8_3 * sqrt_5_2pi * val[0] * (7.0 * val[1] - 1.0)
                      for val in zip(self._pow_sin_t[2], self._pow_cos_t[2])]
-        pre_y_4_1 = [i8_3 * sqrt_5_pi * val[0] * (7.0 * val[1] - 3.0 * val[2]) \
-                     for val in zip(self._pow_sin_t[1], self._pow_cos_t[3], \
+        pre_y_4_1 = [i8_3 * sqrt_5_pi * val[0] * (7.0 * val[1] - 3.0 * val[2])
+                     for val in zip(self._pow_sin_t[1], self._pow_cos_t[3],
                                     self._pow_cos_t[1])]
 
         acc = 0.0
@@ -2182,7 +2409,7 @@ class LocalStructOrderParams:
         # Y_4_0
         real = imag = 0.0
         for i in nnn_range:
-            real += i16_3 * sqrt_1_pi * (35.0 * self._pow_cos_t[4][i] - \
+            real += i16_3 * sqrt_1_pi * (35.0 * self._pow_cos_t[4][i] -
                                          30.0 * self._pow_cos_t[2][i] + 3.0)
         acc += (real * real)
 
@@ -2421,9 +2648,7 @@ class LocalStructOrderParams:
                              " order parameter calculation out-of-bounds!")
         return self._params[index]
 
-    def get_order_parameters(self, structure, n, indices_neighs=None, \
-                             tol=0.0, target_spec=None):
-
+    def get_order_parameters(self, structure, n, indices_neighs=None, tol=0.0, target_spec=None):
         """
         Compute all order parameters of site n.
 
@@ -2509,8 +2734,7 @@ class LocalStructOrderParams:
             if target_spec is None:
                 neighsites = list(neighsitestmp)
             else:
-                neighsites[:] = [site for site in neighsitestmp \
-                                 if site.specie.symbol == target_spec]
+                neighsites[:] = [site for site in neighsitestmp if site.specie.symbol == target_spec]
         nneigh = len(neighsites)
         self._last_nneigh = nneigh
 
@@ -2603,8 +2827,6 @@ class LocalStructOrderParams:
             norms = [[[] for j in range(nneigh)] for t in self._types]
             ipi = 1.0 / pi
             piover2 = pi / 2.0
-            tetangoverpi = acos(-1.0 / 3.0) * ipi  # xxx: delete
-            itetangminuspihalfoverpi = 1.0 / (tetangoverpi - 0.5)
             onethird = 1.0 / 3.0
             twothird = 2.0 / 3.0
             for j in range(nneigh):  # Neighbor j is put to the North pole.
@@ -2650,7 +2872,7 @@ class LocalStructOrderParams:
                             elif t in ["T", "tri_pyr", "sq_pyr", "pent_pyr",
                                        "hex_pyr"]:
                                 tmp = self._params[i]['IGW_EP'] * (
-                                            thetak * ipi - 0.5)
+                                        thetak * ipi - 0.5)
                                 qsptheta[i][j][kc] += exp(-0.5 * tmp * tmp)
                                 norms[i][j][kc] += 1
                             elif t in ["sq_plan", "oct", "oct_legacy",
@@ -2689,21 +2911,18 @@ class LocalStructOrderParams:
                                     tmp = self._params[i]['IGW_SPP'] * (
                                             thetak * ipi - 1.0)
                                     qsptheta[i][j][kc] += (
-                                                self._params[i]['w_SPP'] *
-                                                exp(-0.5 * tmp * tmp))
+                                            self._params[i]['w_SPP'] *
+                                            exp(-0.5 * tmp * tmp))
                                     norms[i][j][kc] += self._params[i]['w_SPP']
                             elif t == "sq_face_cap_trig_pris":
                                 if thetak < self._params[i]['TA3']:
-                                    tmp = self._params[i]['IGW_TA1'] * (
-                                            thetak * ipi - self._params[i][
-                                        'TA1'])
+                                    tmp = self._params[i]['IGW_TA1'] * (thetak * ipi - self._params[i]['TA1'])
                                     qsptheta[i][j][kc] += exp(-0.5 * tmp * tmp)
                                     norms[i][j][kc] += 1
 
                         for m in range(nneigh):
                             if (m != j) and (m != k) and (not flag_xaxis):
-                                tmp = max(
-                                    -1.0, min(np.inner(zaxis, rijnorm[m]), 1.0))
+                                tmp = max(-1.0, min(np.inner(zaxis, rijnorm[m]), 1.0))
                                 thetam = acos(tmp)
                                 xtwoaxistmp = gramschmidt(rijnorm[m], zaxis)
                                 l = np.linalg.norm(xtwoaxistmp)
@@ -2711,15 +2930,10 @@ class LocalStructOrderParams:
                                     flag_xtwoaxis = True
                                 else:
                                     xtwoaxis = xtwoaxistmp / l
-                                    phi = acos(max(
-                                        -1.0,
-                                        min(np.inner(xtwoaxis, xaxis), 1.0)))
+                                    phi = acos(max(-1.0, min(np.inner(xtwoaxis, xaxis), 1.0)))
                                     flag_xtwoaxis = False
                                     if self._comp_azi:
-                                        phi2 = atan2(
-                                            np.dot(xtwoaxis, yaxis),
-                                            np.dot(xtwoaxis, xaxis))
-                                        # print('{} {}'.format(180*phi/pi, 180*phi2/pi))
+                                        phi2 = atan2(np.dot(xtwoaxis, yaxis), np.dot(xtwoaxis, xaxis))
                                 # South pole contributions of m.
                                 if t in ["tri_bipyr", "sq_bipyr", "pent_bipyr",
                                          "hex_bipyr", "oct_max", "sq_plan_max",
@@ -2737,77 +2951,44 @@ class LocalStructOrderParams:
                                     for i, t in enumerate(self._types):
                                         if t in ["tri_plan", "tri_plan_max",
                                                  "tet", "tet_max"]:
-                                            tmp = self._params[i]['IGW_TA'] * (
-                                                    thetam * ipi -
-                                                    self._params[i]['TA'])
-                                            tmp2 = cos(
-                                                self._params[i]['fac_AA'] *
-                                                phi) ** self._params[i][
-                                                       'exp_cos_AA']
-                                            tmp3 = 1 if t in ["tri_plan_max",
-                                                              "tet_max"] \
-                                                else gaussthetak[i]
-                                            qsptheta[i][j][kc] += tmp3 * exp(
-                                                -0.5 * tmp * tmp) * tmp2
+                                            tmp = self._params[i]['IGW_TA'] * (thetam * ipi - self._params[i]['TA'])
+                                            tmp2 = cos(self._params[i]['fac_AA'] * phi) ** self._params[i]['exp_cos_AA']
+                                            tmp3 = 1 if t in ["tri_plan_max", "tet_max"] else gaussthetak[i]
+                                            qsptheta[i][j][kc] += tmp3 * exp(-0.5 * tmp * tmp) * tmp2
                                             norms[i][j][kc] += 1
                                         elif t in ["pent_plan",
                                                    "pent_plan_max"]:
-                                            tmp = 0.4 if thetam <= \
-                                                         self._params[i][
-                                                             'TA'] * pi \
-                                                else 0.8
-                                            tmp2 = self._params[i]['IGW_TA'] * (
-                                                    thetam * ipi - tmp)
+                                            tmp = 0.4 if thetam <= self._params[i]['TA'] * pi else 0.8
+                                            tmp2 = self._params[i]['IGW_TA'] * (thetam * ipi - tmp)
                                             tmp3 = cos(phi)
-                                            tmp4 = 1 if t == "pent_plan_max" \
-                                                else gaussthetak[i]
-                                            qsptheta[i][j][kc] += tmp4 * exp(
-                                                -0.5 * tmp2 * tmp2) * tmp3 * tmp3
+                                            tmp4 = 1 if t == "pent_plan_max" else gaussthetak[i]
+                                            qsptheta[i][j][kc] += tmp4 * exp(-0.5 * tmp2 * tmp2) * tmp3 * tmp3
                                             norms[i][j][kc] += 1
                                         elif t in ["T", "tri_pyr", "sq_pyr",
                                                    "pent_pyr", "hex_pyr"]:
-                                            tmp = cos(
-                                                self._params[i]['fac_AA'] *
-                                                phi) ** self._params[i][
-                                                      'exp_cos_AA']
-                                            tmp3 = self._params[i]['IGW_EP'] * (
-                                                    thetam * ipi - 0.5)
+                                            tmp = cos(self._params[i]['fac_AA'] * phi) ** self._params[i]['exp_cos_AA']
+                                            tmp3 = self._params[i]['IGW_EP'] * (thetam * ipi - 0.5)
                                             qsptheta[i][j][kc] += tmp * exp(
                                                 -0.5 * tmp3 * tmp3)
                                             norms[i][j][kc] += 1
                                         elif t in ["sq_plan", "oct",
                                                    "oct_legacy"]:
-                                            if thetak < self._params[i][
-                                                'min_SPP'] and \
-                                                    thetam < self._params[i][
-                                                'min_SPP']:
-                                                tmp = cos(
-                                                    self._params[i]['fac_AA'] *
-                                                    phi) ** self._params[i][
-                                                          'exp_cos_AA']
-                                                tmp2 = self._params[i][
-                                                           'IGW_EP'] * (
-                                                               thetam * ipi - 0.5)
-                                                qsptheta[i][j][kc] += tmp * exp(
-                                                    -0.5 * tmp2 * tmp2)
+                                            if thetak < self._params[i]['min_SPP'] and \
+                                                    thetam < self._params[i]['min_SPP']:
+                                                tmp = cos(self._params[i]['fac_AA'] * phi) ** self._params[i][
+                                                    'exp_cos_AA']
+                                                tmp2 = self._params[i]['IGW_EP'] * (thetam * ipi - 0.5)
+                                                qsptheta[i][j][kc] += tmp * exp(-0.5 * tmp2 * tmp2)
                                                 if t == "oct_legacy":
-                                                    qsptheta[i][j][kc] -= tmp * \
-                                                                          self._params[
-                                                                              i][
-                                                                              6] * \
-                                                                          self._params[
-                                                                              i][
-                                                                              7]
+                                                    qsptheta[i][j][kc] -= tmp * self._params[i][6] * self._params[i][7]
                                                 norms[i][j][kc] += 1
                                         elif t in ["tri_bipyr", "sq_bipyr",
                                                    "pent_bipyr",
                                                    "hex_bipyr", "oct_max",
                                                    "sq_plan_max",
                                                    "hex_plan_max"]:
-                                            if thetam < self._params[i][
-                                                'min_SPP']:
-                                                if thetak < self._params[i][
-                                                    'min_SPP']:
+                                            if thetam < self._params[i]['min_SPP']:
+                                                if thetak < self._params[i]['min_SPP']:
                                                     tmp = cos(self._params[i][
                                                                   'fac_AA'] *
                                                               phi) ** \
@@ -2827,24 +3008,19 @@ class LocalStructOrderParams:
                                                         -0.5 * tmp2 * tmp2)
                                                     norms[i][j][kc] += 1
                                         elif t == "bcc" and j < k:
-                                            if thetak < self._params[i][
-                                                'min_SPP']:
+                                            if thetak < self._params[i]['min_SPP']:
                                                 if thetak > piover2:
                                                     fac = 1.0
                                                 else:
                                                     fac = -1.0
                                                 tmp = (thetam - piover2) / asin(
                                                     1 / 3)
-                                                qsptheta[i][j][kc] += fac * cos(
-                                                    3.0 * phi) * fac_bcc * \
-                                                                      tmp * exp(
-                                                    -0.5 * tmp * tmp)
+                                                qsptheta[i][j][kc] += fac * cos(3.0 * phi) * fac_bcc * \
+                                                    tmp * exp(-0.5 * tmp * tmp)
                                                 norms[i][j][kc] += 1
                                         elif t == "see_saw_rect":
-                                            if thetam < self._params[i][
-                                                'min_SPP']:
-                                                if thetak < self._params[i][
-                                                    'min_SPP'] and phi < 0.75 * pi:
+                                            if thetam < self._params[i]['min_SPP']:
+                                                if thetak < self._params[i]['min_SPP'] and phi < 0.75 * pi:
                                                     tmp = cos(self._params[i][
                                                                   'fac_AA'] *
                                                               phi) ** \
@@ -2853,84 +3029,52 @@ class LocalStructOrderParams:
                                                     tmp2 = self._params[i][
                                                                'IGW_EP'] * (
                                                                    thetam * ipi - 0.5)
-                                                    qsptheta[i][j][kc] += tmp * \
-                                                                          exp(
-                                                                              -0.5 * tmp2 * tmp2)
+                                                    qsptheta[i][j][kc] += tmp * exp(-0.5 * tmp2 * tmp2)
                                                     norms[i][j][kc] += 1.0
                                         elif t in ["cuboct", "cuboct_max"]:
-                                            if thetam < self._params[i][
-                                                'min_SPP'] and \
-                                                    thetak > self._params[i][
-                                                4] and \
+                                            if thetam < self._params[i]['min_SPP'] and \
+                                                    thetak > self._params[i][4] and \
                                                     thetak < self._params[i][2]:
-                                                if thetam > self._params[i][
-                                                    4] and \
-                                                        thetam < \
-                                                        self._params[i][2]:
+                                                if thetam > self._params[i][4] and thetam < self._params[i][2]:
                                                     tmp = cos(phi)
                                                     tmp2 = self._params[i][
                                                                5] * (
-                                                                       thetam * ipi - 0.5)
+                                                                   thetam * ipi - 0.5)
                                                     qsptheta[i][j][
                                                         kc] += tmp * tmp * exp(
                                                         -0.5 * tmp2 * tmp2)
                                                     norms[i][j][kc] += 1.0
-                                                elif thetam < self._params[i][
-                                                    4]:
-                                                    tmp = 0.0556 * (cos(
-                                                        phi - 0.5 * pi) - 0.81649658)
-                                                    tmp2 = self._params[i][
-                                                               6] * (
-                                                                   thetam * ipi - onethird)
+                                                elif thetam < self._params[i][4]:
+                                                    tmp = 0.0556 * (cos(phi - 0.5 * pi) - 0.81649658)
+                                                    tmp2 = self._params[i][6] * (thetam * ipi - onethird)
                                                     qsptheta[i][j][kc] += exp(
-                                                        -0.5 * tmp * tmp) * \
-                                                                          exp(
-                                                                              -0.5 * tmp2 * tmp2)
+                                                        -0.5 * tmp * tmp) * exp(-0.5 * tmp2 * tmp2)
                                                     norms[i][j][kc] += 1.0
-                                                elif thetam > self._params[i][
-                                                    2]:
-                                                    tmp = 0.0556 * (cos(
-                                                        phi - 0.5 * pi) - \
-                                                                    0.81649658)
-                                                    tmp2 = self._params[i][
-                                                               6] * (
-                                                                       thetam * ipi - \
-                                                                       twothird)
+                                                elif thetam > self._params[i][2]:
+                                                    tmp = 0.0556 * (cos(phi - 0.5 * pi) - 0.81649658)
+                                                    tmp2 = self._params[i][6] * (
+                                                                   thetam * ipi - twothird)
                                                     qsptheta[i][j][kc] += exp(
-                                                        -0.5 * tmp * tmp) * \
-                                                                          exp(
-                                                                              -0.5 * tmp2 * tmp2)
+                                                        -0.5 * tmp * tmp) * exp(-0.5 * tmp2 * tmp2)
                                                     norms[i][j][kc] += 1.0
                                         elif t == "sq_face_cap_trig_pris" and not flag_yaxis:
                                             if thetak < self._params[i]['TA3']:
-                                                if thetam < self._params[i][
-                                                    'TA3']:
-                                                    tmp = cos(self._params[i][
-                                                                  'fac_AA1'] * \
-                                                              phi2) ** \
-                                                          self._params[i][
-                                                              'exp_cos_AA1']
-                                                    tmp2 = self._params[i][
-                                                               'IGW_TA1'] * (
-                                                                   thetam * ipi -
-                                                                   self._params[
-                                                                       i][
-                                                                       'TA1'])
+                                                if thetam < self._params[i]['TA3']:
+                                                    tmp = cos(self._params[i]['fac_AA1'] * phi2) ** \
+                                                        self._params[i]['exp_cos_AA1']
+                                                    tmp2 = self._params[i]['IGW_TA1'] * (thetam * ipi -
+                                                                                         self._params[i]['TA1'])
                                                 else:
-                                                    tmp = cos(self._params[i][
-                                                                  'fac_AA2'] * \
-                                                              (phi2 +
-                                                               self._params[i][
-                                                                   'shift_AA2'])) ** \
-                                                          self._params[i][
-                                                              'exp_cos_AA2']
+                                                    tmp = cos(self._params[i]['fac_AA2'] *
+                                                              (phi2 + self._params[i]['shift_AA2'])) ** \
+                                                          self._params[i]['exp_cos_AA2']
                                                     tmp2 = self._params[i][
                                                                'IGW_TA2'] * (
                                                                    thetam * ipi -
                                                                    self._params[
                                                                        i][
                                                                        'TA2'])
-                                                    # print("phi2 {}   phi2+shift {}   tmp {}  ".format(phi2*180/pi, 180*(phi2 + self._params[i]['shift_AA2'])/pi, tmp))
+
                                                 qsptheta[i][j][kc] += tmp * exp(
                                                     -0.5 * tmp2 * tmp2)
                                                 norms[i][j][kc] += 1
@@ -2957,8 +3101,7 @@ class LocalStructOrderParams:
                     if nneigh > 1:
                         for j in range(nneigh):
                             for k in range(len(qsptheta[i][j])):
-                                qsptheta[i][j][k] = qsptheta[i][j][k] / \
-                                                    norms[i][j][k] \
+                                qsptheta[i][j][k] = qsptheta[i][j][k] / norms[i][j][k] \
                                     if norms[i][j][k] > 1.0e-12 else 0.0
                             ops[i] = max(qsptheta[i][j]) if j == 0 \
                                 else max(ops[i], max(qsptheta[i][j]))
@@ -3034,30 +3177,61 @@ class BrunnerNN_reciprocal(NearNeighbors):
     atoms that are within the largest gap in differences in real space
     interatomic distances. This algorithm uses Brunner's method of
     largest reciprocal gap in interatomic distances.
-
-    Args:
-        tol (float): tolerance parameter for bond determination
-            (default: 1E-4).
-        cutoff (float): cutoff radius in Angstrom to look for near-neighbor
-            atoms. Defaults to 8.0.
     """
 
     def __init__(self, tol=1.0e-4, cutoff=8.0):
+        """
+        Args:
+            tol (float): tolerance parameter for bond determination
+                (default: 1E-4).
+            cutoff (float): cutoff radius in Angstrom to look for near-neighbor
+                atoms. Defaults to 8.0.
+        """
         self.tol = tol
         self.cutoff = cutoff
 
-    def get_nn_info(self, structure, n):
+    @property
+    def structures_allowed(self):
+        """
+        Boolean property: can this NearNeighbors class be used with Structure
+        objects?
+        """
+        return True
 
+    @property
+    def molecules_allowed(self):
+        """
+        Boolean property: can this NearNeighbors class be used with Molecule
+        objects?
+        """
+        return False
+
+    def get_nn_info(self, structure, n):
+        """
+        Get all near-neighbor sites as well as the associated image locations
+        and weights of the site with index n in structure.
+
+        Args:
+            structure (Structure): input structure.
+            n (integer): index of site for which to determine near-neighbor
+                sites.
+
+        Returns:
+            siw (list of tuples (Site, array, float)): tuples, each one
+                of which represents a coordinated site, its image location,
+                and its weight.
+        """
         site = structure[n]
         neighs_dists = structure.get_neighbors(site, self.cutoff)
-        ds = [i[-1] for i in neighs_dists]
+        ds = [i.nn_distance for i in neighs_dists]
         ds.sort()
 
         ns = [1.0 / ds[i] - 1.0 / ds[i + 1] for i in range(len(ds) - 1)]
 
         d_max = ds[ns.index(max(ns))]
         siw = []
-        for s, dist in neighs_dists:
+        for nn in neighs_dists:
+            s, dist = nn, nn.nn_distance
             if dist < d_max + self.tol:
                 w = ds[0] / dist
                 siw.append({'site': s,
@@ -3074,30 +3248,61 @@ class BrunnerNN_relative(NearNeighbors):
     atoms that are within the largest gap in differences in real space
     interatomic distances. This algorithm uses Brunner's method of
     of largest relative gap in interatomic distances.
-
-    Args:
-        tol (float): tolerance parameter for bond determination
-            (default: 1E-4).
-        cutoff (float): cutoff radius in Angstrom to look for near-neighbor
-            atoms. Defaults to 8.0.
     """
 
     def __init__(self, tol=1.0e-4, cutoff=8.0):
+        """
+        Args:
+            tol (float): tolerance parameter for bond determination
+                (default: 1E-4).
+            cutoff (float): cutoff radius in Angstrom to look for near-neighbor
+                atoms. Defaults to 8.0.
+        """
         self.tol = tol
         self.cutoff = cutoff
 
-    def get_nn_info(self, structure, n):
+    @property
+    def structures_allowed(self):
+        """
+        Boolean property: can this NearNeighbors class be used with Structure
+        objects?
+        """
+        return True
 
+    @property
+    def molecules_allowed(self):
+        """
+        Boolean property: can this NearNeighbors class be used with Molecule
+        objects?
+        """
+        return False
+
+    def get_nn_info(self, structure, n):
+        """
+        Get all near-neighbor sites as well as the associated image locations
+        and weights of the site with index n in structure.
+
+        Args:
+            structure (Structure): input structure.
+            n (integer): index of site for which to determine near-neighbor
+                sites.
+
+        Returns:
+            siw (list of tuples (Site, array, float)): tuples, each one
+                of which represents a coordinated site, its image location,
+                and its weight.
+        """
         site = structure[n]
         neighs_dists = structure.get_neighbors(site, self.cutoff)
-        ds = [i[-1] for i in neighs_dists]
+        ds = [i.nn_distance for i in neighs_dists]
         ds.sort()
 
-        ns = [ds[i] / ds[i + 1] for i in range(len(ds) - 1)]
+        ns = [ds[i + 1] / ds[i] for i in range(len(ds) - 1)]
 
         d_max = ds[ns.index(max(ns))]
         siw = []
-        for s, dist in neighs_dists:
+        for nn in neighs_dists:
+            s, dist = nn, nn.nn_distance
             if dist < d_max + self.tol:
                 w = ds[0] / dist
                 siw.append({'site': s,
@@ -3114,30 +3319,61 @@ class BrunnerNN_real(NearNeighbors):
     atoms that are within the largest gap in differences in real space
     interatomic distances. This algorithm uses Brunner's method of
     largest gap in interatomic distances.
-
-    Args:
-        tol (float): tolerance parameter for bond determination
-            (default: 1E-4).
-        cutoff (float): cutoff radius in Angstrom to look for near-neighbor
-            atoms. Defaults to 8.0.
     """
 
     def __init__(self, tol=1.0e-4, cutoff=8.0):
+        """
+        Args:
+            tol (float): tolerance parameter for bond determination
+                (default: 1E-4).
+            cutoff (float): cutoff radius in Angstrom to look for near-neighbor
+                atoms. Defaults to 8.0.
+        """
         self.tol = tol
         self.cutoff = cutoff
 
-    def get_nn_info(self, structure, n):
+    @property
+    def structures_allowed(self):
+        """
+        Boolean property: can this NearNeighbors class be used with Structure
+        objects?
+        """
+        return True
 
+    @property
+    def molecules_allowed(self):
+        """
+        Boolean property: can this NearNeighbors class be used with Molecule
+        objects?
+        """
+        return False
+
+    def get_nn_info(self, structure, n):
+        """
+        Get all near-neighbor sites as well as the associated image locations
+        and weights of the site with index n in structure.
+
+        Args:
+            structure (Structure): input structure.
+            n (integer): index of site for which to determine near-neighbor
+                sites.
+
+        Returns:
+            siw (list of tuples (Site, array, float)): tuples, each one
+                of which represents a coordinated site, its image location,
+                and its weight.
+        """
         site = structure[n]
         neighs_dists = structure.get_neighbors(site, self.cutoff)
-        ds = [i[-1] for i in neighs_dists]
+        ds = [i.nn_distance for i in neighs_dists]
         ds.sort()
 
-        ns = [ds[i] - ds[i + 1] for i in range(len(ds) - 1)]
+        ns = [ds[i + 1] - ds[i] for i in range(len(ds) - 1)]
 
         d_max = ds[ns.index(max(ns))]
         siw = []
-        for s, dist in neighs_dists:
+        for nn in neighs_dists:
+            s, dist = nn, nn.nn_distance
             if dist < d_max + self.tol:
                 w = ds[0] / dist
                 siw.append({'site': s,
@@ -3150,44 +3386,180 @@ class BrunnerNN_real(NearNeighbors):
 
 class EconNN(NearNeighbors):
     """
-    Determines the average effective coordination number for each cation in a given structure
-    using Hoppe's algorithm.
+    Determines the average effective coordination number for each cation in a
+    given structure using Hoppe's algorithm.
 
-    This method finds all cation-centered polyhedrals in the structure, calculates the bond
-    weight for each peripheral ion in the polyhedral, and sums up the bond weights
-    to obtain the effective coordination number for each polyhedral. It then
-    averages the effective coordination of all polyhedrals with the same cation at the
-    central site.
+    This method follows the procedure outlined in:
 
-    Args:
-        tol (float): tolerance parameter for bond determination
-            (default: 1e-4).
-        cutoff (float): cutoff radius in Angstrom to look for near-neighbor
-            atoms. Defaults to 10.0.
+    Hoppe, Rudolf. "Effective coordination numbers (ECoN) and mean fictive ionic
+    radii (MEFIR)." Zeitschrift für Kristallographie-Crystalline Materials
+    150.1-4 (1979): 23-52.
     """
 
-    def __init__(self, tol=1.0e-4, cutoff=10.0):
+    def __init__(
+        self,
+        tol: float = 0.2,
+        cutoff: float = 10.0,
+        cation_anion: bool = False,
+        use_fictive_radius: bool = False
+    ):
+        """
+        Args:
+            tol: Tolerance parameter for bond determination.
+            cutoff: Cutoff radius in Angstrom to look for near-neighbor atoms.
+            cation_anion: If set to True, will restrict bonding targets to
+                sites with opposite or zero charge. Requires an oxidation states
+                on all sites in the structure.
+            use_fictive_radius: Whether to use the fictive radius in the
+                EcoN calculation. If False, the bond distance will be used.
+        """
         self.tol = tol
         self.cutoff = cutoff
+        self.cation_anion = cation_anion
+        self.use_fictive_radius = use_fictive_radius
+
+    @property
+    def structures_allowed(self):
+        """
+        Boolean property: can this NearNeighbors class be used with Structure
+        objects?
+        """
+        return True
+
+    @property
+    def molecules_allowed(self):
+        """
+        Boolean property: can this NearNeighbors class be used with Molecule
+        objects?
+        """
+        return True
+
+    @property
+    def extend_structure_molecules(self):
+        """
+        Boolean property: Do Molecules need to be converted to Structures to use
+        this NearNeighbors class? Note: this property is not defined for classes
+        for which molecules_allowed == False.
+        """
+        return True
 
     def get_nn_info(self, structure, n):
+        """
+        Get all near-neighbor sites as well as the associated image locations
+        and weights of the site with index n in structure.
 
+        Args:
+            structure (Structure): input structure.
+            n (integer): index of site for which to determine near-neighbor
+                sites.
+
+        Returns:
+            siw (list of tuples (Site, array, float)): tuples, each one
+                of which represents a coordinated site, its image location,
+                and its weight.
+        """
         site = structure[n]
-        neighs_dists = structure.get_neighbors(site, self.cutoff)
-        all_bond_lengths = [i[-1] for i in neighs_dists]
-        weighted_avg = calculate_weighted_avg(all_bond_lengths)
+        neighbors = structure.get_neighbors(site, self.cutoff)
+
+        if self.cation_anion and hasattr(site.specie, "oxi_state"):
+            # filter out neighbor of like charge (except for neutral sites)
+            if site.specie.oxi_state >= 0:
+                neighbors = [n for n in neighbors if n.oxi_state <= 0]
+            elif site.specie.oxi_state <= 0:
+                neighbors = [n for n in neighbors if n.oxi_state >= 0]
+
+        if self.use_fictive_radius:
+            # calculate fictive ionic radii
+            firs = [_get_fictive_ionic_radius(site, neighbor)
+                    for neighbor in neighbors]
+        else:
+            # just use the bond distance
+            firs = [neighbor.nn_distance for neighbor in neighbors]
+
+        # calculate mean fictive ionic radius
+        mefir = _get_mean_fictive_ionic_radius(firs)
+
+        # # iteratively solve MEFIR; follows equation 4 in Hoppe's EconN paper
+        prev_mefir = float("inf")
+        while abs(prev_mefir - mefir) > 1e-4:
+            # this is guaranteed to converge
+            prev_mefir = mefir
+            mefir = _get_mean_fictive_ionic_radius(firs, minimum_fir=mefir)
 
         siw = []
-        for s, dist in neighs_dists:
-            if dist < self.cutoff:
-                w = exp(1 - (dist / weighted_avg) ** 6)
+        for nn, fir in zip(neighbors, firs):
+            if nn.nn_distance < self.cutoff:
+                w = exp(1 - (fir / mefir) ** 6)
                 if w > self.tol:
-                    siw.append({'site': s,
-                                'image': self._get_image(structure, s),
-                                'weight': w,
-                                'site_index': self._get_original_site(structure,
-                                                                      s)})
+                    bonded_site = {
+                        'site': nn,
+                        'image': self._get_image(structure, nn),
+                        'weight': w,
+                        'site_index': self._get_original_site(structure, nn)
+                    }
+                    siw.append(bonded_site)
         return siw
+
+
+def _get_fictive_ionic_radius(site: Site, neighbor: PeriodicNeighbor) -> float:
+    """
+    Get fictive ionic radius.
+
+    Follows equation 1 of:
+
+    Hoppe, Rudolf. "Effective coordination numbers (ECoN) and mean fictive ionic
+    radii (MEFIR)." Zeitschrift für Kristallographie-Crystalline Materials
+    150.1-4 (1979): 23-52.
+
+    Args:
+        site: The central site.
+        neighbor neighboring site.
+
+    Returns:
+        Hoppe's fictive ionic radius.
+    """
+    r_h = _get_radius(site)
+    if r_h == 0:
+        r_h = _get_default_radius(site)
+
+    r_i = _get_radius(neighbor)
+    if r_i == 0:
+        r_i = _get_default_radius(neighbor)
+
+    return neighbor.nn_distance * (r_h / (r_h + r_i))
+
+
+def _get_mean_fictive_ionic_radius(
+        fictive_ionic_radii: List[float],
+        minimum_fir: Optional[float] = None,
+) -> float:
+    """
+    Returns the mean fictive ionic radius.
+
+    Follows equation 2:
+
+    Hoppe, Rudolf. "Effective coordination numbers (ECoN) and mean fictive ionic
+    radii (MEFIR)." Zeitschrift für Kristallographie-Crystalline Materials
+    150.1-4 (1979): 23-52.
+
+    Args:
+        fictive_ionic_radii: List of fictive ionic radii for a center site
+            and its neighbors.
+        minimum_fir: Minimum fictive ionic radius to use.
+
+    Returns:
+        Hoppe's mean fictive ionic radius.
+    """
+    if not minimum_fir:
+        minimum_fir = min(fictive_ionic_radii)
+
+    weighted_sum = 0.0
+    total_sum = 0.0
+    for fir in fictive_ionic_radii:
+        weighted_sum += fir * exp(1 - (fir / minimum_fir) ** 6)
+        total_sum += exp(1 - (fir / minimum_fir) ** 6)
+
+    return weighted_sum / total_sum
 
 
 class CrystalNN(NearNeighbors):
@@ -3242,6 +3614,22 @@ class CrystalNN(NearNeighbors):
         self.search_cutoff = search_cutoff
         self.porous_adjustment = porous_adjustment
         self.fingerprint_length = fingerprint_length
+
+    @property
+    def structures_allowed(self):
+        """
+        Boolean property: can this NearNeighbors class be used with Structure
+        objects?
+        """
+        return True
+
+    @property
+    def molecules_allowed(self):
+        """
+        Boolean property: can this NearNeighbors class be used with Molecule
+        objects?
+        """
+        return False
 
     def get_nn_info(self, structure, n):
         """
@@ -3352,9 +3740,9 @@ class CrystalNN(NearNeighbors):
 
         # adjust solid angle weights based on distance
         if self.distance_cutoffs:
-            r1 = self._get_radius(structure[n])
+            r1 = _get_radius(structure[n])
             for entry in nn:
-                r2 = self._get_radius(entry["site"])
+                r2 = _get_radius(entry["site"])
                 if r1 > 0 and r2 > 0:
                     d = r1 + r2
                 else:
@@ -3362,8 +3750,8 @@ class CrystalNN(NearNeighbors):
                         "CrystalNN: cannot locate an appropriate radius, "
                         "covalent or atomic radii will be used, this can lead "
                         "to non-optimal results.")
-                    d = CrystalNN._get_default_radius(structure[n]) + \
-                        CrystalNN._get_default_radius(entry["site"])
+                    d = _get_default_radius(structure[n]) + \
+                        _get_default_radius(entry["site"])
 
                 dist = np.linalg.norm(
                     structure[n].coords - entry["site"].coords)
@@ -3492,64 +3880,6 @@ class CrystalNN(NearNeighbors):
         return (area1 - area2) / (0.25 * math.pi * r ** 2)
 
     @staticmethod
-    def _get_default_radius(site):
-        """
-        An internal method to get a "default" covalent/element radius
-
-        Args:
-            site: (Site)
-
-        Returns:
-            Covalent radius of element on site, or Atomic radius if unavailable
-        """
-        try:
-            return CovalentRadius.radius[site.specie.symbol]
-        except:
-            return site.specie.atomic_radius
-
-    @staticmethod
-    def _get_radius(site):
-        """
-        An internal method to get the expected radius for a site with
-        oxidation state.
-        Args:
-            site: (Site)
-
-        Returns:
-            Oxidation-state dependent radius: ionic, covalent, or atomic.
-            Returns 0 if no oxidation state or appropriate radius is found.
-        """
-        if hasattr(site.specie, 'oxi_state'):
-            el = site.specie.element
-            oxi = site.specie.oxi_state
-
-            if oxi == 0:
-                return CrystalNN._get_default_radius(site)
-
-            elif oxi in el.ionic_radii:
-                return el.ionic_radii[oxi]
-
-            # e.g., oxi = 2.667, average together 2+ and 3+ radii
-            elif int(math.floor(oxi)) in el.ionic_radii and \
-                    int(math.ceil(oxi)) in el.ionic_radii:
-                oxi_low = el.ionic_radii[int(math.floor(oxi))]
-                oxi_high = el.ionic_radii[int(math.ceil(oxi))]
-                x = oxi - int(math.floor(oxi))
-                return (1 - x) * oxi_low + x * oxi_high
-
-            elif oxi > 0 and el.average_cationic_radius > 0:
-                return el.average_cationic_radius
-
-            elif oxi < 0 and el.average_anionic_radius > 0:
-                return el.average_anionic_radius
-
-        else:
-            warnings.warn("CrystalNN: distance cutoffs set but no oxidation "
-                          "states specified on sites! For better results, set "
-                          "the site oxidation states in the structure.")
-        return 0
-
-    @staticmethod
     def transform_to_length(nndata, length):
         """
         Given NNData, transforms data to the specified fingerprint length
@@ -3570,23 +3900,63 @@ class CrystalNN(NearNeighbors):
         return nndata
 
 
-def calculate_weighted_avg(bonds):
+def _get_default_radius(site):
     """
-    Returns the weighted average bond length given by
-    Hoppe's effective coordination number formula.
+    An internal method to get a "default" covalent/element radius
 
     Args:
-        bonds (list): list of floats that are the
-        bond distances between a cation and its
-        peripheral ions
+        site: (Site)
+
+    Returns:
+        Covalent radius of element on site, or Atomic radius if unavailable
     """
-    minimum_bond = min(bonds)
-    weighted_sum = 0.0
-    total_sum = 0.0
-    for entry in bonds:
-        weighted_sum += entry * exp(1 - (entry / minimum_bond) ** 6)
-        total_sum += exp(1 - (entry / minimum_bond) ** 6)
-    return weighted_sum / total_sum
+    try:
+        return CovalentRadius.radius[site.specie.symbol]
+    except Exception:
+        return site.specie.atomic_radius
+
+
+def _get_radius(site):
+    """
+    An internal method to get the expected radius for a site with
+    oxidation state.
+    Args:
+        site: (Site)
+
+    Returns:
+        Oxidation-state dependent radius: ionic, covalent, or atomic.
+        Returns 0 if no oxidation state or appropriate radius is found.
+    """
+    if hasattr(site.specie, 'oxi_state'):
+        el = site.specie.element
+        oxi = site.specie.oxi_state
+
+        if oxi == 0:
+            return _get_default_radius(site)
+
+        elif oxi in el.ionic_radii:
+            return el.ionic_radii[oxi]
+
+        # e.g., oxi = 2.667, average together 2+ and 3+ radii
+        elif int(math.floor(oxi)) in el.ionic_radii and \
+                int(math.ceil(oxi)) in el.ionic_radii:
+            oxi_low = el.ionic_radii[int(math.floor(oxi))]
+            oxi_high = el.ionic_radii[int(math.ceil(oxi))]
+            x = oxi - int(math.floor(oxi))
+            return (1 - x) * oxi_low + x * oxi_high
+
+        elif oxi > 0 and el.average_cationic_radius > 0:
+            return el.average_cationic_radius
+
+        elif el.average_anionic_radius > 0 > oxi:
+            return el.average_anionic_radius
+
+    else:
+        warnings.warn(
+            "No oxidation states specified on sites! For better results, set "
+            "the site oxidation states in the structure."
+        )
+    return 0
 
 
 class CutOffDictNN(NearNeighbors):
@@ -3620,6 +3990,31 @@ class CutOffDictNN(NearNeighbors):
                 self._max_dist = dist
         self._lookup_dict = lookup_dict
 
+    @property
+    def structures_allowed(self):
+        """
+        Boolean property: can this NearNeighbors class be used with Structure
+        objects?
+        """
+        return True
+
+    @property
+    def molecules_allowed(self):
+        """
+        Boolean property: can this NearNeighbors class be used with Molecule
+        objects?
+        """
+        return True
+
+    @property
+    def extend_structure_molecules(self):
+        """
+        Boolean property: Do Molecules need to be converted to Structures to use
+        this NearNeighbors class? Note: this property is not defined for classes
+        for which molecules_allowed == False.
+        """
+        return True
+
     @staticmethod
     def from_preset(preset):
         """
@@ -3641,14 +4036,28 @@ class CutOffDictNN(NearNeighbors):
             raise ValueError("Unrecognised preset: {}".format(preset))
 
     def get_nn_info(self, structure, n):
+        """
+        Get all near-neighbor sites as well as the associated image locations
+        and weights of the site with index n in structure.
 
+        Args:
+            structure (Structure): input structure.
+            n (integer): index of site for which to determine near-neighbor
+                sites.
+
+        Returns:
+            siw (list of tuples (Site, array, float)): tuples, each one
+                of which represents a coordinated site, its image location,
+                and its weight.
+        """
         site = structure[n]
 
         neighs_dists = structure.get_neighbors(site, self._max_dist)
 
         nn_info = []
-        for n_site, dist in neighs_dists:
-
+        for nn in neighs_dists:
+            n_site = nn
+            dist = nn.nn_distance
             neigh_cut_off_dist = self._lookup_dict \
                 .get(site.species_string, {}) \
                 .get(n_site.species_string, 0.0)
@@ -3674,7 +4083,9 @@ class Critic2NN(NearNeighbors):
     """
 
     def __init__(self):
-
+        """
+        Init for Critic2NN.
+        """
         # we cache the last-used structure, in case user
         # calls get_nn_info() repeatedly for different
         # sites in the same structure to save redundant
@@ -3682,7 +4093,37 @@ class Critic2NN(NearNeighbors):
         self.__last_structure = None
         self.__last_bonded_structure = None
 
+    @property
+    def structures_allowed(self):
+        """
+        Boolean property: can this NearNeighbors class be used with Structure
+        objects?
+        """
+        return True
+
+    @property
+    def molecules_allowed(self):
+        """
+        Boolean property: can this NearNeighbors class be used with Molecule
+        objects?
+        """
+        return True
+
+    @property
+    def extend_structure_molecules(self):
+        """
+        Boolean property: Do Molecules need to be converted to Structures to use
+        this NearNeighbors class? Note: this property is not defined for classes
+        for which molecules_allowed == False.
+        """
+        return True
+
     def get_bonded_structure(self, structure, decorate=False):
+        """
+        :param structure: Input structure
+        :param decorate: Whether to decorate the structure
+        :return: Bonded structure
+        """
 
         # not a top-level import because critic2 is an optional
         # dependency, only want to raise an import error if
@@ -3706,7 +4147,20 @@ class Critic2NN(NearNeighbors):
         return sg
 
     def get_nn_info(self, structure, n):
+        """
+        Get all near-neighbor sites as well as the associated image locations
+        and weights of the site with index n in structure.
 
+        Args:
+            structure (Structure): input structure.
+            n (integer): index of site for which to determine near-neighbor
+                sites.
+
+        Returns:
+            siw (list of tuples (Site, array, float)): tuples, each one
+                of which represents a coordinated site, its image location,
+                and its weight.
+        """
         sg = self.get_bonded_structure(structure)
 
         return [
