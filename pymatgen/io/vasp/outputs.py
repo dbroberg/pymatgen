@@ -4764,13 +4764,16 @@ class Wavecar:
     def write_unks(self, directory: str) -> None:
         """
         Write the UNK files to the given directory.
+
         Writes the cell-periodic part of the bloch wavefunctions from the
         WAVECAR file to each of the UNK files. There will be one UNK file for
         each of the kpoints in the WAVECAR file.
+
         Note:
             wannier90 expects the full kpoint grid instead of the symmetry-
             reduced one that VASP stores the wavefunctions on. You should run
             a nscf calculation with ISYM=0 to obtain the correct grid.
+
         Args:
             directory (str): directory where the UNK files are written
         """
@@ -4905,22 +4908,31 @@ class Wavecar:
 class Eigenval:
     """
     Object for reading EIGENVAL file.
+
     .. attribute:: filename
         string containing input filename
+
     .. attribute:: occu_tol
         tolerance for determining occupation in band properties
+
     .. attribute:: ispin
         spin polarization tag (int)
+
     .. attribute:: nelect
         number of electrons
+
     .. attribute:: nkpt
         number of kpoints
+
     .. attribute:: nbands
         number of bands
+
     .. attribute:: kpoints
         list of kpoints
+
     .. attribute:: kpoints_weights
         weights of each kpoint in the BZ, should sum to 1.
+
     .. attribute:: eigenvalues
         Eigenvalues as a dict of {(spin): np.ndarray(shape=(nkpt, nbands, 2))}.
         This representation is based on actual ordering in VASP and is meant as
@@ -4931,9 +4943,11 @@ class Eigenval:
     def __init__(self, filename, occu_tol=1e-8):
         """
         Reads input from filename to construct Eigenval object
+
         Args:
             filename (str):     filename of EIGENVAL to read in
             occu_tol (float):   tolerance for determining band gap
+
         Returns:
             a pymatgen.io.vasp.outputs.Eigenval object
         """
@@ -5000,6 +5014,7 @@ class Eigenval:
                         cbm = eigenval
                         cbm_kpoint = k
         return max(cbm - vbm, 0), cbm, vbm, vbm_kpoint == cbm_kpoint
+
 
 class Wavederf:
     """

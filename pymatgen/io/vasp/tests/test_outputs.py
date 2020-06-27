@@ -1547,6 +1547,20 @@ class WavecarTest(PymatgenTest):
         self.assertEqual(np.prod(c.data['total'].shape), np.prod(w.ng * 2))
         self.assertFalse(np.all(c.data['total'] > 0.))
 
+        w = self.w_ncl
+        w.coeffs.append([np.ones((2, 100))])
+        c = w.get_parchg(poscar, -1, 0, phase=False, spinor=None)
+        self.assertTrue('total' in c.data)
+        self.assertTrue('diff' not in c.data)
+        self.assertEqual(np.prod(c.data['total'].shape), np.prod(w.ng * 2))
+        self.assertFalse(np.all(c.data['total'] > 0.))
+
+        c = w.get_parchg(poscar, -1, 0, phase=True, spinor=0)
+        self.assertTrue('total' in c.data)
+        self.assertTrue('diff' not in c.data)
+        self.assertEqual(np.prod(c.data['total'].shape), np.prod(w.ng * 2))
+        self.assertFalse(np.all(c.data['total'] > 0.))
+
     def test_prob_density(self):
         pass
 
