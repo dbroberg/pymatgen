@@ -4761,6 +4761,44 @@ class Wavecar:
         self.ng = temp_ng
         return Chgcar(poscar, data)
 
+    def write_unks(self, directory: str) -> None:
+        """
+        Write the UNK files to the given directory.
+        Writes the cell-periodic part of the bloch wavefunctions from the
+        WAVECAR file to each of the UNK files. There will be one UNK file for
+        each of the kpoints in the WAVECAR file.
+        Note:
+            wannier90 expects the full kpoint grid instead of the symmetry-
+            reduced one that VASP stores the wavefunctions on. You should run
+            a nscf calculation with ISYM=0 to obtain the correct grid.
+        Args:
+            directory (str): directory where the UNK files are written
+        """
+        out_dir = Path(directory).expanduser()
+        if not out_dir.exists():
+            out_dir.mkdir(parents=False)
+        elif not out_dir.is_dir():
+            raise ValueError('invalid directory')
+
+        N = np.prod(self.ng)
+        for ik in range(self.nk):
+            fname = f'UNK{ik+1:05d}.'
+            if self.vasp_type.lower()[0] == 'n':
+                data = np.empty((self.nb, 2, *self.ng), dtype=np.complex128)
+                for ib in range(self.nb):
+                    data[ib, 0, :, :, :] = \
+                        np.fft.ifftn(self.fft_mesh(ik, ib, spinor=0)) * N
+                    data[ib, 1, :, :, :] = \
+                        np.fft.ifftn(self.fft_mesh(ik, ib, spinor=1)) * N
+                Unk(ik+1, data).write_file(str(out_dir / (fname + 'NC')))
+            else:
+                data = np.empty((self.nb, *self.ng), dtype=np.complex128)
+                for ispin in range(self.spin):
+                    for ib in range(self.nb):
+                        data[ib, :, :, :] = \
+                            np.fft.ifftn(self.fft_mesh(ik, ib, spin=ispin)) * N
+                    Unk(ik+1, data).write_file(str(out_dir / (fname + f'{ispin+1}')))
+
     def prob_density(self, kpoint, band, spin):
         psi = np.fft.fftn( self.fft_mesh( kpoint, band, spin=spin, shift=False))
         n = np.abs(np.conj(psi)*psi) # magnitude squared of wavefunction
@@ -4863,6 +4901,105 @@ class Wavecar:
 
         return reduced_x, reduced_y, percentage_y
 
+
+class Eigenval:
+    """
+    Object for reading EIGENVAL file.
+    .. attribute:: filename
+        string containing input filename
+    .. attribute:: occu_tol
+        tolerance for determining occupation in band properties
+    .. attribute:: ispin
+        spin polarization tag (int)
+    .. attribute:: nelect
+        number of electrons
+    .. attribute:: nkpt
+        number of kpoints
+    .. attribute:: nbands
+        number of bands
+    .. attribute:: kpoints
+        list of kpoints
+    .. attribute:: kpoints_weights
+        weights of each kpoint in the BZ, should sum to 1.
+    .. attribute:: eigenvalues
+        Eigenvalues as a dict of {(spin): np.ndarray(shape=(nkpt, nbands, 2))}.
+        This representation is based on actual ordering in VASP and is meant as
+        an intermediate representation to be converted into proper objects. The
+        kpoint index is 0-based (unlike the 1-based indexing in VASP).
+    """
+
+    def __init__(self, filename, occu_tol=1e-8):
+        """
+        Reads input from filename to construct Eigenval object
+        Args:
+            filename (str):     filename of EIGENVAL to read in
+            occu_tol (float):   tolerance for determining band gap
+        Returns:
+            a pymatgen.io.vasp.outputs.Eigenval object
+        """
+
+        self.filename = filename
+        self.occu_tol = occu_tol
+
+        with zopen(filename, 'r') as f:
+            self.ispin = int(f.readline().split()[-1])
+
+            # useless header information
+            for _ in range(4):
+                f.readline()
+
+            self.nelect, self.nkpt, self.nbands = \
+                list(map(int, f.readline().split()))
+
+            self.kpoints = []
+            self.kpoints_weights = []
+            if self.ispin == 2:
+                self.eigenvalues = \
+                    {Spin.up: np.zeros((self.nkpt, self.nbands, 2)),
+                     Spin.down: np.zeros((self.nkpt, self.nbands, 2))}
+            else:
+                self.eigenvalues = \
+                    {Spin.up: np.zeros((self.nkpt, self.nbands, 2))}
+
+            ikpt = -1
+            for line in f:
+                if re.search(r'(\s+[\-+0-9eE.]+){4}', str(line)):
+                    ikpt += 1
+                    kpt = list(map(float, line.split()))
+                    self.kpoints.append(kpt[:-1])
+                    self.kpoints_weights.append(kpt[-1])
+                    for i in range(self.nbands):
+                        sl = list(map(float, f.readline().split()))
+                        if len(sl) == 3:
+                            self.eigenvalues[Spin.up][ikpt, i, 0] = sl[1]
+                            self.eigenvalues[Spin.up][ikpt, i, 1] = sl[2]
+                        elif len(sl) == 5:
+                            self.eigenvalues[Spin.up][ikpt, i, 0] = sl[1]
+                            self.eigenvalues[Spin.up][ikpt, i, 1] = sl[3]
+                            self.eigenvalues[Spin.down][ikpt, i, 0] = sl[2]
+                            self.eigenvalues[Spin.down][ikpt, i, 1] = sl[4]
+
+    @property
+    def eigenvalue_band_properties(self):
+        """
+        Band properties from the eigenvalues as a tuple,
+        (band gap, cbm, vbm, is_band_gap_direct).
+        """
+
+        vbm = -float("inf")
+        vbm_kpoint = None
+        cbm = float("inf")
+        cbm_kpoint = None
+        for spin, d in self.eigenvalues.items():
+            for k, val in enumerate(d):
+                for (eigenval, occu) in val:
+                    if occu > self.occu_tol and eigenval > vbm:
+                        vbm = eigenval
+                        vbm_kpoint = k
+                    elif occu <= self.occu_tol and eigenval < cbm:
+                        cbm = eigenval
+                        cbm_kpoint = k
+        return max(cbm - vbm, 0), cbm, vbm, vbm_kpoint == cbm_kpoint
 
 class Wavederf:
     """

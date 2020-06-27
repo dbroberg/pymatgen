@@ -641,7 +641,6 @@ class KumagaiCorrection(DefectCorrection):
         Plots the AtomicSite electrostatic potential against the Long range and short range models
         from Kumagai and Oba (doi: 10.1103/PhysRevB.89.195205)
         """
-        import matplotlib.pyplot as plt
         if "pot_plot_data" not in self.metadata.keys():
             raise ValueError("Cannot plot potential alignment before running correction!")
 
