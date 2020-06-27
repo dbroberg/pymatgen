@@ -1561,6 +1561,40 @@ class WavecarTest(PymatgenTest):
         self.assertEqual(np.prod(c.data['total'].shape), np.prod(w.ng * 2))
         self.assertFalse(np.all(c.data['total'] > 0.))
 
+        w.coeffs[-1] = [np.zeros((2, 100))]
+        c = w.get_parchg(poscar, -1, 0, phase=False, spinor=1)
+        self.assertTrue('total' in c.data)
+        self.assertTrue('diff' not in c.data)
+        self.assertEqual(np.prod(c.data['total'].shape), np.prod(w.ng * 2))
+        self.assertTrue(np.allclose(c.data['total'], 0.))
+
+    def test_write_unks(self):
+        unk_std = Unk.from_file(self.TEST_FILES_DIR / 'UNK.N2.std')
+        unk_ncl = Unk.from_file(self.TEST_FILES_DIR / 'UNK.H2.ncl')
+
+        with self.assertRaises(ValueError):
+            self.w.write_unks(self.TEST_FILES_DIR / 'UNK.N2.std')
+
+        # different grids
+        with ScratchDir('.'):
+            self.w.write_unks('./unk_dir')
+            self.assertEqual(len(list(Path('./unk_dir').glob('UNK*'))), 1)
+            unk = Unk.from_file('./unk_dir/UNK00001.1')
+            self.assertNotEqual(unk, unk_std)
+
+        # correct grid
+        self.w.ng = np.array([12, 12, 12])
+        with ScratchDir('.'):
+            self.w.write_unks('.')
+            unk = Unk.from_file('UNK00001.1')
+            self.assertEqual(unk, unk_std)
+
+        # ncl test
+        with ScratchDir('.'):
+            self.w_ncl.write_unks('.')
+            unk = Unk.from_file('UNK00001.NC')
+            self.assertEqual(unk, unk_ncl)
+            
     def test_prob_density(self):
         pass
 

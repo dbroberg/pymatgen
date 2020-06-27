@@ -4910,30 +4910,39 @@ class Eigenval:
     Object for reading EIGENVAL file.
 
     .. attribute:: filename
+
         string containing input filename
 
     .. attribute:: occu_tol
+
         tolerance for determining occupation in band properties
 
     .. attribute:: ispin
+
         spin polarization tag (int)
 
     .. attribute:: nelect
+
         number of electrons
 
     .. attribute:: nkpt
+
         number of kpoints
 
     .. attribute:: nbands
+
         number of bands
 
     .. attribute:: kpoints
+
         list of kpoints
 
     .. attribute:: kpoints_weights
+
         weights of each kpoint in the BZ, should sum to 1.
 
     .. attribute:: eigenvalues
+
         Eigenvalues as a dict of {(spin): np.ndarray(shape=(nkpt, nbands, 2))}.
         This representation is based on actual ordering in VASP and is meant as
         an intermediate representation to be converted into proper objects. The
