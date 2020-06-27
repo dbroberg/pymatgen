@@ -1578,4 +1578,3 @@ def parse_defect_states(structure, defect_site, wavecar, procar,
                   'followup_wf_parse': followup_wf_parse_md}
 
     return defect_out
-    return defect_out
